@@ -1,10 +1,24 @@
 import { BrapiProvider } from "@/services/market-data/brapi.provider";
-import type { MarketDataProvider } from "@/types/market-data";
+import { BolsaiProvider } from "@/services/market-data/bolsai.provider";
+import type { FundamentalsProvider, MarketDataProvider } from "@/types/market-data";
 
-let provider: MarketDataProvider | null = null;
+let marketProvider: MarketDataProvider | null = null;
+let fundamentalsProvider: BolsaiProvider | null = null;
 
-/** Provedor ativo. Para trocar de fonte de dados, basta implementar MarketDataProvider e ajustar aqui. */
+/**
+ * Fonte de cotações e histórico de preços.
+ * Para trocar de fonte, implemente MarketDataProvider e ajuste aqui.
+ */
 export function getMarketDataProvider(): MarketDataProvider {
-  if (!provider) provider = new BrapiProvider();
-  return provider;
+  if (!marketProvider) marketProvider = new BrapiProvider();
+  return marketProvider;
+}
+
+/**
+ * Fonte de indicadores fundamentalistas.
+ * Retorna null quando não há chave configurada — o sistema segue apenas com cotações.
+ */
+export function getFundamentalsProvider(): FundamentalsProvider | null {
+  if (!fundamentalsProvider) fundamentalsProvider = new BolsaiProvider();
+  return fundamentalsProvider.isConfigured ? fundamentalsProvider : null;
 }

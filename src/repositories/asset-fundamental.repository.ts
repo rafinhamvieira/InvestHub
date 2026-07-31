@@ -1,12 +1,21 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+
+/** Campos gravaveis de um snapshot — subconjunto do modelo AssetFundamental. */
+type AssetFundamentalFields = Omit<
+  Prisma.AssetFundamentalUncheckedCreateInput,
+  "id" | "assetId" | "referenceDate" | "createdAt"
+>;
 
 export const assetFundamentalRepository = {
-  /** Grava/atualiza o snapshot de indicadores do dia (campos null preservam valor anterior ausente). */
-  upsertSnapshot(
-    assetId: string,
-    referenceDate: Date,
-    data: { price?: number | null; pl?: number | null; dividendYield?: number | null; marketCap?: number | null },
-  ) {
+  /**
+   * Grava/atualiza o snapshot de indicadores de uma data-base.
+   *
+   * Só os campos informados são escritos: assim, dados vindos de fontes diferentes
+   * (preço do provedor de cotações, indicadores do de fundamentos) se somam no mesmo
+   * registro em vez de um sobrescrever o outro com null.
+   */
+  upsertSnapshot(assetId: string, referenceDate: Date, data: AssetFundamentalFields) {
     const day = new Date(
       Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), referenceDate.getUTCDate()),
     );

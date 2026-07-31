@@ -18,7 +18,7 @@ export const assetRepository = {
   listActive() {
     return prisma.asset.findMany({
       where: { isActive: true },
-      select: { id: true, ticker: true, name: true, sector: true },
+      select: { id: true, ticker: true, name: true, sector: true, type: true },
     });
   },
 

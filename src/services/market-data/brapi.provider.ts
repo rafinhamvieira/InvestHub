@@ -1,10 +1,12 @@
 import { cached } from "@/lib/cache";
 import { logger } from "@/lib/logger";
+import { translateSector } from "@/constants/sector";
 import type {
   MarketDataProvider,
   MarketQuote,
   MarketOhlcBar,
   MarketDividend,
+  MarketListItem,
 } from "@/types/market-data";
 
 const QUOTE_CACHE_TTL = 15 * 60; // 15 min
@@ -56,8 +58,21 @@ interface BrapiQuoteResult {
   summaryProfile?: { sector?: string };
 }
 
+interface BrapiListItem {
+  stock: string;
+  name?: string;
+  close?: number | null;
+  change?: number | null;
+  volume?: number | null;
+  market_cap?: number | null;
+  sector?: string | null;
+  subsector?: string | null;
+  type?: string;
+}
+
 interface BrapiResponse {
   results?: BrapiQuoteResult[];
+  stocks?: BrapiListItem[];
   /** Em erros de negócio a brapi responde com este corpo (às vezes com HTTP 400). */
   error?: boolean;
   message?: string;
@@ -201,6 +216,34 @@ export class BrapiProvider implements MarketDataProvider {
       dividendYieldPercent,
       marketCap: num(result.marketCap),
     };
+  }
+
+  async listAll(): Promise<MarketListItem[]> {
+    const items = await cached<MarketListItem[]>(
+      "brapi:list",
+      QUOTE_CACHE_TTL,
+      async () => {
+        const { data } = await this.request("/quote/list", {});
+        const stocks = data?.stocks ?? [];
+
+        return stocks
+          .filter((s) => num(s.close) !== null && num(s.close)! > 0)
+          .map<MarketListItem>((s) => ({
+            ticker: s.stock.toUpperCase(),
+            name: s.name ?? s.stock,
+            price: num(s.close)!,
+            changePercent: num(s.change),
+            volume: num(s.volume),
+            marketCap: num(s.market_cap),
+            sector: translateSector(s.sector),
+            subsector: s.subsector ?? null,
+            assetType: s.type === "fund" ? "FII" : s.type === "bdr" ? "BDR" : "STOCK",
+          }));
+      },
+      { cacheIf: (list) => list.length > 0 },
+    );
+
+    return items;
   }
 
   async getQuotes(tickers: string[]): Promise<Map<string, MarketQuote>> {
