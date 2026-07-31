@@ -1,0 +1,539 @@
+// InvestHub — Schema do banco de dados
+// Domínios: Identidade/Auth · Mercado (dados mestres) · Carteira do usuário · Planejamento · Acompanhamento
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum RiskProfile {
+  CONSERVATIVE
+  MODERATE
+  AGGRESSIVE
+  CUSTOM
+}
+
+enum AssetType {
+  STOCK
+  FII
+  ETF
+  BDR
+  TREASURY
+}
+
+enum TransactionType {
+  BUY
+  SELL
+}
+
+enum AllocationTargetLevel {
+  CLASS
+  SECTOR
+  ASSET
+}
+
+enum AlertType {
+  PRICE_ABOVE
+  PRICE_BELOW
+  DIVIDEND_YIELD_ABOVE
+  PL_BELOW
+  FAIR_PRICE_MARGIN_REACHED
+  NEW_DIVIDEND_DECLARED
+}
+
+enum AlertStatus {
+  ACTIVE
+  TRIGGERED
+  DISABLED
+}
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+}
+
+enum ValuationMethod {
+  GRAHAM
+  BAZIN
+  LYNCH
+  GREENBLATT
+  DCF
+  CUSTOM
+}
+
+// ============================================================
+// IDENTIDADE / AUTENTICAÇÃO
+// ============================================================
+
+model User {
+  id                      String      @id @default(cuid())
+  name                    String?
+  email                   String      @unique
+  emailVerified           DateTime?
+  image                   String?
+  passwordHash            String?
+  role                    Role        @default(USER)
+  riskProfile             RiskProfile @default(MODERATE)
+  currency                String      @default("BRL")
+  locale                  String      @default("pt-BR")
+  theme                   String      @default("system")
+  emailNotifications      Boolean     @default(true)
+
+  twoFactorEnabled        Boolean     @default(false)
+  twoFactorSecret         String?
+  twoFactorRecoveryCodes  String[]    @default([])
+
+  failedLoginAttempts     Int         @default(0)
+  lockedUntil             DateTime?
+
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  accounts                Account[]
+  sessions                Session[]
+  passwordResetTokens     PasswordResetToken[]
+  loginAudits             LoginAudit[]
+  auditLogs               AuditLog[]
+  brokers                 Broker[]
+  transactions            Transaction[]
+  positions               Position[]
+  dividendReceipts        DividendReceipt[]
+  allocationTargets       AllocationTarget[]
+  watchlists              Watchlist[]
+  alerts                  Alert[]
+  notifications           Notification[]
+  scoreWeight             ScoreWeight?
+  valuationAssumptions    ValuationAssumption[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Registro de toda tentativa de login (sucesso ou falha) para auditoria e detecção de abuso.
+model LoginAudit {
+  id        String   @id @default(cuid())
+  userId    String?
+  email     String
+  success   Boolean
+  ipAddress String?
+  userAgent String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([email])
+  @@index([createdAt])
+  @@map("login_audits")
+}
+
+/// Trilha de auditoria genérica para ações sensíveis (alteração de senha, exclusão de conta, mudança de e-mail etc.)
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// MERCADO — dados mestres (alimentados por integrações, fase futura)
+// ============================================================
+
+model Asset {
+  id          String    @id @default(cuid())
+  ticker      String    @unique
+  name        String
+  type        AssetType
+  sector      String?
+  subsector   String?
+  segment     String?
+  cnpj        String?
+  description String?
+  logoUrl     String?
+  currency    String    @default("BRL")
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  fundamentals         AssetFundamental[]
+  prices               AssetPrice[]
+  dividends            AssetDividend[]
+  transactions         Transaction[]
+  positions            Position[]
+  watchlistItems       WatchlistItem[]
+  alerts               Alert[]
+  allocationTargets    AllocationTarget[]
+  valuationAssumptions ValuationAssumption[]
+
+  @@index([type])
+  @@index([sector])
+  @@map("assets")
+}
+
+/// Série histórica de indicadores fundamentalistas (um snapshot por data de referência).
+model AssetFundamental {
+  id            String   @id @default(cuid())
+  assetId       String
+  referenceDate DateTime
+
+  price          Decimal? @db.Decimal(18, 4)
+  pl             Decimal? @db.Decimal(12, 4)
+  pvp            Decimal? @db.Decimal(12, 4)
+  dividendYield  Decimal? @db.Decimal(8, 4)
+  roe            Decimal? @db.Decimal(8, 4)
+  roic           Decimal? @db.Decimal(8, 4)
+  netMargin      Decimal? @db.Decimal(8, 4)
+  ebitdaMargin   Decimal? @db.Decimal(8, 4)
+  evEbit         Decimal? @db.Decimal(12, 4)
+  evEbitda       Decimal? @db.Decimal(12, 4)
+  liquidity      Decimal? @db.Decimal(18, 2)
+  tagAlong       Decimal? @db.Decimal(6, 2)
+  freeFloat      Decimal? @db.Decimal(6, 2)
+  revenueGrowth  Decimal? @db.Decimal(8, 4)
+  earningsGrowth Decimal? @db.Decimal(8, 4)
+  netDebt        Decimal? @db.Decimal(18, 2)
+  netDebtEbitda  Decimal? @db.Decimal(8, 4)
+  equity         Decimal? @db.Decimal(18, 2)
+  marketCap      Decimal? @db.Decimal(18, 2)
+
+  // Específico de FIIs
+  vacancy              Decimal? @db.Decimal(6, 2)
+  capRate              Decimal? @db.Decimal(6, 2)
+  numberOfProperties   Int?
+  numberOfShareholders Int?
+  managerName          String?
+  averageContractTerm  Decimal? @db.Decimal(8, 2)
+  indexer              String?
+
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, referenceDate])
+  @@index([assetId])
+  @@map("asset_fundamentals")
+}
+
+/// Série histórica de preço (fechamento diário) para gráficos e cálculo de rentabilidade.
+model AssetPrice {
+  id        String   @id @default(cuid())
+  assetId   String
+  date      DateTime
+  close     Decimal  @db.Decimal(18, 4)
+  open      Decimal? @db.Decimal(18, 4)
+  high      Decimal? @db.Decimal(18, 4)
+  low       Decimal? @db.Decimal(18, 4)
+  volume    BigInt?
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, date])
+  @@index([assetId, date])
+  @@map("asset_prices")
+}
+
+/// Proventos declarados pelo ativo (dividendo, JCP, rendimento de FII).
+model AssetDividend {
+  id            String    @id @default(cuid())
+  assetId       String
+  type          String
+  valuePerShare Decimal   @db.Decimal(12, 6)
+  exDate        DateTime
+  paymentDate   DateTime?
+  declaredAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  asset    Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  receipts DividendReceipt[]
+
+  @@index([assetId, exDate])
+  @@map("asset_dividends")
+}
+
+// ============================================================
+// CARTEIRA DO USUÁRIO
+// ============================================================
+
+model Broker {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name])
+  @@map("brokers")
+}
+
+/// Ledger de compras e vendas — fonte da verdade da carteira. Position é derivado disto.
+model Transaction {
+  id        String          @id @default(cuid())
+  userId    String
+  assetId   String
+  brokerId  String?
+  type      TransactionType
+  quantity  Decimal         @db.Decimal(18, 8)
+  price     Decimal         @db.Decimal(18, 4)
+  fees      Decimal         @default(0) @db.Decimal(18, 4)
+  date      DateTime
+  notes     String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset  Asset   @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  broker Broker? @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+
+  @@index([userId, assetId])
+  @@index([userId, date])
+  @@map("transactions")
+}
+
+/// Posição consolidada por ativo, recalculada pelo service após cada transação (cache de leitura).
+model Position {
+  id            String   @id @default(cuid())
+  userId        String
+  assetId       String
+  quantity      Decimal  @db.Decimal(18, 8)
+  averagePrice  Decimal  @db.Decimal(18, 4)
+  totalInvested Decimal  @db.Decimal(18, 4)
+  updatedAt     DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetId])
+  @@map("positions")
+}
+
+/// Proventos efetivamente recebidos pelo usuário, calculado ao cruzar Position com AssetDividend.
+model DividendReceipt {
+  id            String   @id @default(cuid())
+  userId        String
+  dividendId    String
+  quantityHeld  Decimal  @db.Decimal(18, 8)
+  totalReceived Decimal  @db.Decimal(18, 4)
+  createdAt     DateTime @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dividend AssetDividend @relation(fields: [dividendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dividendId])
+  @@map("dividend_receipts")
+}
+
+// ============================================================
+// PLANEJAMENTO
+// ============================================================
+
+/// Metas de alocação definidas pelo usuário, em três níveis: classe, setor ou ativo individual.
+model AllocationTarget {
+  id            String                @id @default(cuid())
+  userId        String
+  level         AllocationTargetLevel
+  label         String
+  assetId       String?
+  targetPercent Decimal               @db.Decimal(6, 2)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, level, label])
+  @@map("allocation_targets")
+}
+
+/// Pesos personalizáveis do score de inteligência (0–100) por indicador. Soma esperada = 100.
+model ScoreWeight {
+  id                Int      @id @default(autoincrement())
+  userId            String   @unique
+  valuation         Int      @default(20)
+  dividendYield     Int      @default(15)
+  pl                Int      @default(10)
+  roe               Int      @default(15)
+  margins           Int      @default(10)
+  debt              Int      @default(10)
+  priceSafetyMargin Int      @default(10)
+  dividendHistory   Int      @default(5)
+  liquidity         Int      @default(3)
+  governance        Int      @default(2)
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("score_weights")
+}
+
+/// Parâmetros customizados por usuário/ativo para os métodos de valuation (Graham, Bazin, Lynch, DCF...).
+model ValuationAssumption {
+  id                   String          @id @default(cuid())
+  userId               String
+  assetId              String?
+  method               ValuationMethod
+  desiredDividendYield Decimal?        @db.Decimal(6, 2)
+  marginOfSafety       Decimal?        @db.Decimal(6, 2)
+  growthRate           Decimal?        @db.Decimal(6, 2)
+  discountRate         Decimal?        @db.Decimal(6, 2)
+  perpetuityGrowthRate Decimal?        @db.Decimal(6, 2)
+  projectionYears      Int?
+  grahamMultiplier     Decimal?        @db.Decimal(6, 2)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetId, method])
+  @@map("valuation_assumptions")
+}
+
+// ============================================================
+// ACOMPANHAMENTO
+// ============================================================
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String   @default("Favoritos")
+  createdAt DateTime @default(now())
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
+
+  @@unique([userId, name])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id @default(cuid())
+  watchlistId String
+  assetId     String
+  addedAt     DateTime @default(now())
+
+  watchlist Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  asset     Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, assetId])
+  @@map("watchlist_items")
+}
+
+model Alert {
+  id          String              @id @default(cuid())
+  userId      String
+  assetId     String
+  type        AlertType
+  targetValue Decimal             @db.Decimal(18, 4)
+  status      AlertStatus         @default(ACTIVE)
+  triggeredAt DateTime?
+  channel     NotificationChannel @default(EMAIL)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset         Asset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@index([userId, status])
+  @@map("alerts")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  alertId   String?
+  title     String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}

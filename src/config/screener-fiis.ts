@@ -1,0 +1,37 @@
+import type { ScreenerConfig } from "@/types/screener";
+
+export const FII_SCREENER_CONFIG: ScreenerConfig = {
+  title: "Screener de FIIs",
+  description: "Filtre e compare fundos imobiliários por indicadores do segmento.",
+  csvName: "screener-fiis",
+  columns: [
+    { key: "score", label: "Nota", format: "score" },
+    { key: "segment", label: "Segmento", format: "text", minWidth: "min-w-32" },
+    { key: "price", label: "Preço", format: "currency" },
+    { key: "dy", label: "DY", format: "percent" },
+    { key: "pvp", label: "P/VP", format: "number" },
+    { key: "vacancy", label: "Vacância", format: "percent" },
+    { key: "liquidity", label: "Liquidez", format: "compact" },
+    { key: "numberOfProperties", label: "Imóveis", format: "number" },
+    { key: "managerName", label: "Gestora", format: "text", minWidth: "min-w-32" },
+    { key: "equity", label: "Patrimônio", format: "compact" },
+    { key: "capRate", label: "Cap Rate", format: "percent" },
+    { key: "averageContractTerm", label: "Prazo médio (anos)", format: "number" },
+    { key: "numberOfShareholders", label: "Cotistas", format: "compact" },
+    { key: "indexer", label: "Indexador", format: "text" },
+  ],
+  filters: [
+    { key: "score", label: "Nota do ativo", kind: "range" },
+    { key: "segment", label: "Segmento", kind: "select" },
+    { key: "indexer", label: "Indexador", kind: "select" },
+    { key: "managerName", label: "Gestora", kind: "text" },
+    { key: "dy", label: "Dividend Yield", kind: "range", unit: "%" },
+    { key: "pvp", label: "P/VP", kind: "range" },
+    { key: "vacancy", label: "Vacância", kind: "range", unit: "%" },
+    { key: "liquidity", label: "Liquidez diária (R$)", kind: "range" },
+    { key: "capRate", label: "Cap Rate", kind: "range", unit: "%" },
+    { key: "numberOfProperties", label: "Número de imóveis", kind: "range" },
+    { key: "averageContractTerm", label: "Prazo médio (anos)", kind: "range" },
+    { key: "equity", label: "Patrimônio (R$)", kind: "range" },
+  ],
+};

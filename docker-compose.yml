@@ -1,0 +1,145 @@
+name: investhub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-investhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-investhub}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-investhub} -d ${POSTGRES_DB:-investhub}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [investhub_net]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [investhub_net]
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    command: sh -c "npx prisma migrate deploy"
+    env_file: .env
+    # Bind mount para que migrações geradas no servidor (prisma migrate dev) persistam no host.
+    volumes:
+      - ./prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [investhub_net]
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [investhub_net]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?defina APP_DOMAIN no .env}
+      # Só substitui variáveis APP_* no template; $host, $remote_addr etc. ficam intactos.
+      NGINX_ENVSUBST_FILTER: "^APP_"
+    volumes:
+      - ./docker/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app
+    # Recarrega a cada 6h para adotar certificados renovados sem downtime.
+    command:
+      - /bin/sh
+      - -c
+      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+    networks: [investhub_net]
+
+  # Renovação automática do certificado (checa a cada 12h; só renova perto do vencimento).
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+  # Job agendado: sincroniza cotações/fundamentos a cada 15 min e avalia alertas.
+  # Requer CRON_SECRET definido no .env.
+  scheduler:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      CRON_SECRET: ${CRON_SECRET:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Scheduler iniciado — sync a cada 15 minutos";
+        while true; do
+          sleep 900;
+          curl -s -m 290 -X POST -H "x-cron-secret: $${CRON_SECRET}" http://app:3000/api/market/sync \
+            || echo "sync falhou; nova tentativa no próximo ciclo";
+        done
+    networks: [investhub_net]
+
+  # Administração do banco — perfil "dev". Publicado só em 127.0.0.1: acesse via túnel SSH
+  # (ssh -L 8080:localhost:8080 usuario@servidor), nunca exposto à internet.
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - postgres
+    networks: [investhub_net]
+    profiles: ["dev"]
+
+networks:
+  investhub_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  certbot_conf:
+  certbot_www:

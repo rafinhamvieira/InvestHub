@@ -1,0 +1,36 @@
+{
+  "root": true,
+  "extends": ["next/core-web-vitals", "next/typescript", "prettier"],
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
+    "react/no-array-index-key": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["src/app/**/*.tsx", "src/components/**/*.tsx", "src/hooks/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/lib/prisma",
+                "message": "Componentes não devem acessar o Prisma diretamente. Use um service."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["@/repositories/*", "*/repositories/*"],
+                "message": "Componentes React não devem importar repositories diretamente; use services."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+# Template processado pelo entrypoint do nginx (envsubst) — apenas variáveis APP_* são
+# substituídas (NGINX_ENVSUBST_FILTER=^APP_), então $host, $remote_addr etc. ficam intactos.
+
+# Limite de requisições por IP como camada extra ao rate limit da aplicação.
+limit_req_zone $binary_remote_addr zone=geral:10m rate=30r/s;
+# A proteção real contra força bruta é o rate limit da aplicação (5 tentativas/min por IP).
+# Aqui o limite é folgado de propósito: o NextAuth consulta /api/auth/session com frequência
+# e um teto apertado derrubaria usuários legítimos com várias abas abertas.
+limit_req_zone $binary_remote_addr zone=login:10m rate=5r/s;
+
+# Porta 80: apenas validação do Let's Encrypt e redirecionamento para HTTPS.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${APP_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${APP_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # OCSP stapling (usa a cadeia emitida pelo Let's Encrypt).
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/letsencrypt/live/${APP_DOMAIN}/chain.pem;
+
+    # Limite de upload: a importação de carteira aceita até 5 MB.
+    client_max_body_size 6m;
+
+    server_tokens off;
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript application/x-javascript text/xml application/xml image/svg+xml;
+    gzip_min_length 1024;
+
+    # Resolver interno do Docker: reconsulta o DNS do serviço "app" periodicamente,
+    # então `docker compose up --scale app=N` distribui carga sem reiniciar o nginx.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location /api/auth/ {
+        limit_req zone=login burst=10 nodelay;
+        set $upstream_app app:3000;
+        proxy_pass http://$upstream_app;
+        include /etc/nginx/proxy_params.conf;
+    }
+
+    # O Next.js já envia Cache-Control immutable nos assets com hash; só repassamos.
+    location /_next/static/ {
+        set $upstream_app app:3000;
+        proxy_pass http://$upstream_app;
+        include /etc/nginx/proxy_params.conf;
+    }
+
+    location / {
+        limit_req zone=geral burst=60 nodelay;
+        set $upstream_app app:3000;
+        proxy_pass http://$upstream_app;
+        include /etc/nginx/proxy_params.conf;
+    }
+}
