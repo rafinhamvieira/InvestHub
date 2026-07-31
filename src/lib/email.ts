@@ -12,18 +12,26 @@ interface SendEmailInput {
 
 export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<void> {
   if (!resend) {
-    logger.warn("RESEND_API_KEY não configurada — e-mail não enviado, apenas logado.", {
-      to,
-      subject,
-    });
+    // Em produção isso é erro de configuração: o usuário vê "e-mail enviado" e nada chega.
+    // Logamos como erro para que apareça em `docker compose logs app`.
+    const message =
+      "RESEND_API_KEY ausente — nenhum e-mail foi enviado. " +
+      "Defina a chave no .env e recrie o container (docker compose up -d --force-recreate app).";
+    if (process.env.NODE_ENV === "production") {
+      logger.error(message, { to, subject });
+    } else {
+      logger.warn(message, { to, subject });
+    }
     return;
   }
 
-  const { error } = await resend.emails.send({ from: FROM, to, subject, html });
+  const { data, error } = await resend.emails.send({ from: FROM, to, subject, html });
   if (error) {
-    logger.error("Falha ao enviar e-mail", { to, subject, error: error.message });
+    logger.error("Falha ao enviar e-mail", { to, subject, from: FROM, error: error.message });
     throw new Error("Não foi possível enviar o e-mail.");
   }
+
+  logger.info("E-mail enviado", { to, subject, id: data?.id });
 }
 
 export function verificationEmailTemplate(verifyUrl: string): string {
