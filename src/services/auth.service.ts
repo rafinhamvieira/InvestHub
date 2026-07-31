@@ -6,6 +6,7 @@ import { verificationTokenRepository } from "@/repositories/verification-token.r
 import { hashPassword, verifyPassword, generateSecureToken } from "@/lib/crypto";
 import { sendEmail, verificationEmailTemplate, passwordResetEmailTemplate } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 import { twoFactorService } from "@/services/two-factor.service";
 import { AUTH_CONSTANTS, AUTH_ERROR_CODES } from "@/constants/auth";
 import type { RegisterInput, LoginInput } from "@/schemas/auth.schema";
@@ -61,7 +62,18 @@ export const authService = {
       userAgent: ctx.userAgent,
     });
 
-    await this.sendVerificationEmail(user.email, ctx);
+    // A conta já existe neste ponto. Uma falha no envio (provedor fora do ar, remetente
+    // não verificado) não deve derrubar o cadastro e deixar a conta órfã e inacessível:
+    // registramos o erro e a pessoa pede um novo link pelo botão de reenvio no login.
+    try {
+      await this.sendVerificationEmail(user.email, ctx);
+    } catch (error) {
+      logger.error("Conta criada, mas o e-mail de confirmação falhou", {
+        userId: user.id,
+        email: user.email,
+        error: (error as Error).message,
+      });
+    }
   },
 
   async sendVerificationEmail(email: string, ctx: RequestContext): Promise<void> {
