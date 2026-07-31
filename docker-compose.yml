@@ -129,8 +129,11 @@ services:
       - -c
       - "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
-  # Job agendado: sincroniza cotações/fundamentos a cada 15 min e avalia alertas.
-  # Requer CRON_SECRET definido no .env.
+  # Job agendado: sincroniza cotações/fundamentos e avalia alertas.
+  #
+  # Atenção à cota do provedor: no plano gratuito da brapi cada ativo consome uma
+  # requisição por ciclo. Com 20 ativos e intervalo de 30 min, são ~960 requisições/dia.
+  # Aumente SYNC_INTERVAL_SECONDS se estiver perto do limite do seu plano.
   scheduler:
     image: curlimages/curl:8.11.1
     restart: unless-stopped
@@ -138,12 +141,13 @@ services:
       - app
     environment:
       CRON_SECRET: ${CRON_SECRET:-}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-1800}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "Scheduler iniciado — sync a cada 15 minutos";
+        echo "Scheduler iniciado — sync a cada $${SYNC_INTERVAL_SECONDS}s";
         while true; do
-          sleep 900;
+          sleep "$${SYNC_INTERVAL_SECONDS}";
           curl -s -m 290 -X POST -H "x-cron-secret: $${CRON_SECRET}" http://app:3000/api/market/sync \
             || echo "sync falhou; nova tentativa no próximo ciclo";
         done

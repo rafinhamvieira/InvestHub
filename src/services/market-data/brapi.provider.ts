@@ -9,9 +9,18 @@ import type {
 
 const QUOTE_CACHE_TTL = 15 * 60; // 15 min
 const HISTORY_CACHE_TTL = 60 * 60; // 1h
-const BATCH_SIZE = 10;
-const REQUEST_DELAY_MS = 350;
 const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Quantos tickers cabem em uma requisição.
+ *
+ * O plano gratuito da brapi aceita apenas 1 — pedir mais devolve HTTP 400 com
+ * "QUOTES_PER_REQUEST_EXCEEDED". Planos pagos aceitam mais; ajuste por MARKET_DATA_BATCH_SIZE.
+ */
+const BATCH_SIZE = Math.max(1, Number(process.env.MARKET_DATA_BATCH_SIZE ?? 1));
+
+/** Pausa entre requisições, para não estourar o limite por minuto do provedor. */
+const REQUEST_DELAY_MS = Math.max(0, Number(process.env.MARKET_DATA_DELAY_MS ?? 400));
 
 interface BrapiHistoricalPrice {
   date: number;
@@ -49,6 +58,10 @@ interface BrapiQuoteResult {
 
 interface BrapiResponse {
   results?: BrapiQuoteResult[];
+  /** Em erros de negócio a brapi responde com este corpo (às vezes com HTTP 400). */
+  error?: boolean;
+  message?: string;
+  code?: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -70,7 +83,18 @@ export class BrapiProvider implements MarketDataProvider {
   private baseUrl = process.env.MARKET_DATA_BASE_URL || "https://brapi.dev/api";
   private token = process.env.MARKET_DATA_API_KEY || "";
 
-  private async request(path: string, params: Record<string, string>): Promise<BrapiResponse | null> {
+  /**
+   * Recursos que dependem do plano contratado. Começamos otimistas e desligamos o que
+   * o provedor recusar — assim o mesmo código atende plano gratuito e pago, sem que uma
+   * funcionalidade indisponível derrube a coleta de preço, que é o essencial.
+   */
+  private dividendsEnabled = process.env.MARKET_DATA_DIVIDENDS !== "false";
+  private profileEnabled = true;
+
+  private async request(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<{ data: BrapiResponse | null; code?: string }> {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     if (this.token) url.searchParams.set("token", this.token);
@@ -80,15 +104,71 @@ export class BrapiProvider implements MarketDataProvider {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) {
-        logger.warn("brapi respondeu com erro", { path, status: response.status });
-        return null;
+
+      const data = (await response.json().catch(() => null)) as BrapiResponse | null;
+
+      // A brapi sinaliza erro de negócio no corpo, às vezes com HTTP 200. Registramos a
+      // mensagem para o problema ser acionável ("plano permite no máximo 1 ativo",
+      // "módulo indisponível no seu plano", "token inválido").
+      if (!response.ok || data?.error) {
+        logger.warn("brapi respondeu com erro", {
+          path,
+          status: response.status,
+          code: data?.code,
+          message: data?.message,
+        });
+        return { data: null, code: data?.code };
       }
-      return (await response.json()) as BrapiResponse;
+
+      return { data };
     } catch (error) {
       logger.warn("Falha na chamada à brapi", { path, error: (error as Error).message });
-      return null;
+      return { data: null };
     }
+  }
+
+  /**
+   * Busca um ticker e guarda o resultado bruto em cache.
+   *
+   * Cotação, indicadores, setor e proventos vêm todos nesta única chamada — e tanto
+   * getQuotes quanto getDividends leem daqui, para não gastar duas requisições da cota
+   * do provedor com o mesmo ativo.
+   */
+  private async fetchTicker(ticker: string): Promise<BrapiQuoteResult | null> {
+    return cached<BrapiQuoteResult | null>(
+      `brapi:ticker:${ticker}`,
+      QUOTE_CACHE_TTL,
+      async () => {
+        // Tenta com os extras; se o plano recusar algum, desliga e refaz sem ele.
+        // Uma tentativa frustrada não pode custar a cotação do ativo.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const params: Record<string, string> = {};
+          if (this.dividendsEnabled) params.dividends = "true";
+          if (this.profileEnabled) params.modules = "summaryProfile";
+
+          const { data, code } = await this.request(`/quote/${ticker}`, params);
+          if (data) return data.results?.[0] ?? null;
+
+          if (code === "FEATURE_NOT_AVAILABLE" && this.dividendsEnabled) {
+            this.dividendsEnabled = false;
+            logger.warn(
+              "Plano do provedor sem acesso a dividendos — seguindo apenas com cotação, fundamentos e setor.",
+            );
+            continue;
+          }
+          if (code === "MODULES_NOT_AVAILABLE" && this.profileEnabled) {
+            this.profileEnabled = false;
+            logger.warn("Plano do provedor sem acesso ao setor do ativo.");
+            continue;
+          }
+          return null;
+        }
+        return null;
+      },
+      // Falhas não entram no cache: senão o erro persistiria pelo TTL inteiro e as
+      // sincronizações seguintes nem tentariam a rede.
+      { cacheIf: (result) => result !== null },
+    );
   }
 
   private mapQuote(result: BrapiQuoteResult): MarketQuote | null {
@@ -129,14 +209,10 @@ export class BrapiProvider implements MarketDataProvider {
 
     for (let i = 0; i < unique.length; i += BATCH_SIZE) {
       const batch = unique.slice(i, i + BATCH_SIZE);
-      const cacheKey = `brapi:quotes:${batch.join(",")}`;
 
-      const results = await cached<BrapiQuoteResult[]>(cacheKey, QUOTE_CACHE_TTL, async () => {
-        const data = await this.request(`/quote/${batch.join(",")}`, { dividends: "true" });
-        return data?.results ?? [];
-      });
-
+      const results = await Promise.all(batch.map((ticker) => this.fetchTicker(ticker)));
       for (const result of results) {
+        if (!result) continue;
         const quote = this.mapQuote(result);
         if (quote) quotes.set(quote.ticker, quote);
       }
@@ -154,7 +230,7 @@ export class BrapiProvider implements MarketDataProvider {
       cacheKey,
       HISTORY_CACHE_TTL,
       async () => {
-        const data = await this.request(`/quote/${ticker}`, { range, interval: "1d" });
+        const { data } = await this.request(`/quote/${ticker}`, { range, interval: "1d" });
         const history = data?.results?.[0]?.historicalDataPrice ?? [];
         return history
           .filter((bar) => num(bar.close) !== null)
@@ -167,14 +243,17 @@ export class BrapiProvider implements MarketDataProvider {
             volume: num(bar.volume),
           }));
       },
+      // Mesma razão do cache de cotação: uma falha não pode ficar guardada por 1 hora.
+      { cacheIf: (bars) => bars.length > 0 },
     );
 
     return bars.map((bar) => ({ ...bar, date: new Date(bar.date) }));
   }
 
   async getDividends(ticker: string): Promise<MarketDividend[]> {
-    const data = await this.request(`/quote/${ticker}`, { dividends: "true" });
-    const cash = data?.results?.[0]?.dividendsData?.cashDividends ?? [];
+    // Lê do mesmo cache preenchido por getQuotes — sem gastar outra requisição.
+    const result = await this.fetchTicker(ticker.toUpperCase());
+    const cash = result?.dividendsData?.cashDividends ?? [];
 
     return cash
       .filter((d) => num(d.rate) !== null && d.lastDatePrior)
