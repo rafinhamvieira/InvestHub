@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export function PasswordCard() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   async function save() {
@@ -18,7 +19,7 @@ export function PasswordCard() {
     const response = await fetch("/api/account/password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
     });
     setIsSaving(false);
 
@@ -32,6 +33,7 @@ export function PasswordCard() {
 
     setCurrentPassword("");
     setNewPassword("");
+    setConfirmPassword("");
     toast.success("Senha alterada com sucesso.");
   }
 
@@ -44,7 +46,7 @@ export function PasswordCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="current-password">Senha atual</Label>
             <Input
@@ -65,9 +67,27 @@ export function PasswordCard() {
               onChange={(e) => setNewPassword(e.target.value)}
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password">Repita a nova senha</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            {confirmPassword.length > 0 && confirmPassword !== newPassword && (
+              <p className="text-xs text-destructive">As senhas não coincidem.</p>
+            )}
+          </div>
         </div>
 
-        <Button onClick={save} disabled={isSaving || !currentPassword || !newPassword}>
+        <Button
+          onClick={save}
+          disabled={
+            isSaving || !currentPassword || !newPassword || newPassword !== confirmPassword
+          }
+        >
           {isSaving && <Loader2 className="animate-spin" />}
           Alterar senha
         </Button>

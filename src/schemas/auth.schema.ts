@@ -8,11 +8,17 @@ const passwordField = z
     message: "A senha deve conter maiúscula, minúscula, número e símbolo.",
   });
 
-export const registerSchema = z.object({
-  name: z.string().trim().min(2, "Informe seu nome completo.").max(120),
-  email: z.string().trim().toLowerCase().email("E-mail inválido."),
-  password: passwordField,
-});
+export const registerSchema = z
+  .object({
+    name: z.string().trim().min(2, "Informe seu nome completo.").max(120),
+    email: z.string().trim().toLowerCase().email("E-mail inválido."),
+    password: passwordField,
+    confirmPassword: z.string().min(1, "Repita a senha."),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "As senhas não coincidem.",
+  });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({
@@ -28,11 +34,37 @@ export const forgotPasswordSchema = z.object({
 });
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Token inválido."),
-  password: passwordField,
-});
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Token inválido."),
+    password: passwordField,
+    confirmPassword: z.string().min(1, "Repita a nova senha."),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "As senhas não coincidem.",
+  });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+/**
+ * Mesmas regras do reset, sem o token — que vem da URL, não do formulário.
+ * Schemas com .refine() não aceitam .omit(), por isso a definição separada.
+ */
+export const resetPasswordFormSchema = z
+  .object({
+    password: passwordField,
+    confirmPassword: z.string().min(1, "Repita a nova senha."),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "As senhas não coincidem.",
+  });
+export type ResetPasswordFormInput = z.infer<typeof resetPasswordFormSchema>;
+
+export const resendVerificationSchema = z.object({
+  email: z.string().trim().toLowerCase().email("E-mail inválido."),
+});
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 
 export const verifyEmailSchema = z.object({
   token: z.string().min(1, "Token inválido."),

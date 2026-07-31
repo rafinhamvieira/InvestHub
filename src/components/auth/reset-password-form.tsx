@@ -6,14 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { resetPasswordSchema } from "@/schemas/auth.schema";
+import {
+  resetPasswordFormSchema,
+  type ResetPasswordFormInput,
+} from "@/schemas/auth.schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { z } from "zod";
 
-const formSchema = resetPasswordSchema.omit({ token: true });
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = ResetPasswordFormInput;
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export function ResetPasswordForm() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+  } = useForm<FormValues>({ resolver: zodResolver(resetPasswordFormSchema) });
 
   async function onSubmit(values: FormValues) {
     setIsSubmitting(true);
@@ -42,7 +43,12 @@ export function ResetPasswordForm() {
     setIsSubmitting(false);
 
     if (!response.ok) {
-      setFormError("Link inválido ou expirado. Solicite um novo.");
+      const data = await response.json().catch(() => null);
+      setFormError(
+        data?.error === "SAME_PASSWORD"
+          ? "A nova senha precisa ser diferente da senha atual."
+          : "Link inválido ou expirado. Solicite um novo.",
+      );
       return;
     }
 
@@ -71,6 +77,22 @@ export function ResetPasswordForm() {
         <Label htmlFor="password">Nova senha</Label>
         <Input id="password" type="password" autoComplete="new-password" {...register("password")} />
         {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
+        <p className="text-xs text-muted-foreground">
+          Mínimo 10 caracteres, com maiúscula, minúscula, número e símbolo.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="confirmPassword">Repita a nova senha</Label>
+        <Input
+          id="confirmPassword"
+          type="password"
+          autoComplete="new-password"
+          {...register("confirmPassword")}
+        />
+        {errors.confirmPassword && (
+          <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+        )}
       </div>
 
       {formError && <p className="text-sm text-destructive">{formError}</p>}

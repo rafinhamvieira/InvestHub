@@ -85,6 +85,19 @@ export function RegisterForm() {
         </p>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="confirmPassword">Repita a senha</Label>
+        <Input
+          id="confirmPassword"
+          type="password"
+          autoComplete="new-password"
+          {...register("confirmPassword")}
+        />
+        {errors.confirmPassword && (
+          <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+        )}
+      </div>
+
       {formError && <p className="text-sm text-destructive">{formError}</p>}
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>

@@ -143,6 +143,14 @@ export const authService = {
       throw new AuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS, "Token inválido ou expirado.");
     }
 
+    // Redefinir para a mesma senha não corrige um vazamento — exigimos uma senha diferente.
+    if (record.user.passwordHash && (await verifyPassword(newPassword, record.user.passwordHash))) {
+      throw new AuthError(
+        AUTH_ERROR_CODES.SAME_PASSWORD,
+        "A nova senha precisa ser diferente da senha atual.",
+      );
+    }
+
     const passwordHash = await hashPassword(newPassword);
     await userRepository.updatePasswordHash(record.userId, passwordHash);
     await passwordResetRepository.markUsed(record.id);

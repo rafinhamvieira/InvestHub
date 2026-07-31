@@ -13,4 +13,6 @@ export const AUTH_ERROR_CODES = {
   TWO_FACTOR_REQUIRED: "TWO_FACTOR_REQUIRED",
   INVALID_TWO_FACTOR_CODE: "INVALID_TWO_FACTOR_CODE",
   RATE_LIMITED: "RATE_LIMITED",
+  /** A nova senha é igual à que já estava em uso. */
+  SAME_PASSWORD: "SAME_PASSWORD",
 } as const;

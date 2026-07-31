@@ -89,6 +89,13 @@ export const accountService = {
     const valid = await verifyPassword(input.currentPassword, user.passwordHash);
     if (!valid) throw new AccountError("INVALID_PASSWORD", "Senha atual incorreta.");
 
+    if (input.currentPassword === input.newPassword) {
+      throw new AccountError(
+        "SAME_PASSWORD",
+        "A nova senha precisa ser diferente da senha atual.",
+      );
+    }
+
     await userRepository.updatePasswordHash(userId, await hashPassword(input.newPassword));
     await passwordResetRepository.invalidateAllForUser(userId);
     await auditLogRepository.record({

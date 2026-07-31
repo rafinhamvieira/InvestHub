@@ -7,7 +7,8 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, MailWarning } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,9 @@ export function LoginForm() {
   const [totpCode, setTotpCode] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Exibe a opção de reenviar a confirmação quando o motivo da falha é e-mail não verificado.
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const {
     register,
@@ -47,6 +51,7 @@ export function LoginForm() {
   async function attemptSignIn(values: CredentialsValues, code?: string) {
     setIsSubmitting(true);
     setFormError(null);
+    setNeedsVerification(false);
 
     const result = await signIn("credentials", {
       email: values.email,
@@ -62,6 +67,7 @@ export function LoginForm() {
         setRequiresTwoFactor(true);
         return;
       }
+      if (result.error === "EMAIL_NOT_VERIFIED") setNeedsVerification(true);
       setFormError(ERROR_MESSAGES[result.error] ?? "Não foi possível entrar. Tente novamente.");
       return;
     }
@@ -74,6 +80,17 @@ export function LoginForm() {
 
   async function onSubmitTwoFactor() {
     await attemptSignIn(getValues(), totpCode);
+  }
+
+  async function resendVerification() {
+    setIsResending(true);
+    await fetch("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: getValues("email") }),
+    }).catch(() => null);
+    setIsResending(false);
+    toast.success("Se houver um cadastro pendente para este e-mail, um novo link foi enviado.");
   }
 
   if (requiresTwoFactor) {
@@ -129,7 +146,28 @@ export function LoginForm() {
         {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
       </div>
 
-      {formError && <p className="text-sm text-destructive">{formError}</p>}
+      {formError && !needsVerification && <p className="text-sm text-destructive">{formError}</p>}
+
+      {needsVerification && (
+        <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          <p className="flex items-start gap-2 text-sm text-foreground">
+            <MailWarning className="mt-0.5 size-4 shrink-0" />
+            Sua conta ainda não teve o e-mail confirmado. Procure o link na sua caixa de entrada
+            (e no spam) ou peça um novo.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={isResending}
+            onClick={resendVerification}
+          >
+            {isResending && <Loader2 className="animate-spin" />}
+            Reenviar e-mail de confirmação
+          </Button>
+        </div>
+      )}
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>
         {isSubmitting && <Loader2 className="animate-spin" />}
