@@ -9,6 +9,7 @@ import { z } from "zod";
 import Link from "next/link";
 import { Loader2, MailWarning } from "lucide-react";
 import { toast } from "sonner";
+import { FormAlert } from "@/components/shared/form-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -113,7 +114,7 @@ export function LoginForm() {
             onChange={(e) => setTotpCode(e.target.value)}
           />
         </div>
-        {formError && <p className="text-sm text-destructive">{formError}</p>}
+        {formError && <FormAlert message={formError} />}
         <Button className="w-full" disabled={isSubmitting || totpCode.length !== 6} onClick={onSubmitTwoFactor}>
           {isSubmitting && <Loader2 className="animate-spin" />}
           Verificar
@@ -146,7 +147,7 @@ export function LoginForm() {
         {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
       </div>
 
-      {formError && !needsVerification && <p className="text-sm text-destructive">{formError}</p>}
+      {formError && !needsVerification && <FormAlert message={formError} />}
 
       {needsVerification && (
         <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3">

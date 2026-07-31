@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Coins, Info, Loader2, Sparkles } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/utils/format";
 import type { ContributionPlan, StrategyConfig } from "@/types/contribution";
@@ -82,8 +83,7 @@ export function ContributionView() {
     setIsLoading(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.message ?? "Não foi possível gerar a recomendação.");
+      toast.error(await extractApiError(response, "Não foi possível gerar a recomendação."));
       return;
     }
 

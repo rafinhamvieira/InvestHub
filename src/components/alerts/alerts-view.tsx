@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { format } from "date-fns";
 import { Bell, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { AlertStatus, AlertType, NotificationChannel } from "@prisma/client";
@@ -51,7 +52,7 @@ export function AlertsView({ alerts }: { alerts: AlertRow[] }) {
       body: JSON.stringify({ active }),
     });
     if (!response.ok) {
-      toast.error("Não foi possível atualizar o alerta.");
+      toast.error(await extractApiError(response, "Não foi possível atualizar o alerta."));
       return;
     }
     router.refresh();
@@ -60,7 +61,7 @@ export function AlertsView({ alerts }: { alerts: AlertRow[] }) {
   async function remove(alert: AlertRow) {
     const response = await fetch(`/api/alerts/${alert.id}`, { method: "DELETE" });
     if (!response.ok) {
-      toast.error("Não foi possível excluir o alerta.");
+      toast.error(await extractApiError(response, "Não foi possível excluir o alerta."));
       return;
     }
     toast.success("Alerta excluído.");
@@ -73,7 +74,7 @@ export function AlertsView({ alerts }: { alerts: AlertRow[] }) {
     setIsChecking(false);
 
     if (!response.ok) {
-      toast.error("Não foi possível verificar os alertas.");
+      toast.error(await extractApiError(response, "Não foi possível verificar os alertas."));
       return;
     }
     const data = await response.json();

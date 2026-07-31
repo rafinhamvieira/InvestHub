@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,8 +19,7 @@ export function SyncButton() {
     setIsSyncing(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.message ?? "Não foi possível atualizar os dados.");
+      toast.error(await extractApiError(response, "Não foi possível atualizar os dados."));
       return;
     }
 

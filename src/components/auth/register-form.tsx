@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { registerSchema, type RegisterInput } from "@/schemas/auth.schema";
+import { extractApiError } from "@/utils/api-error";
+import { FormAlert } from "@/components/shared/form-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,12 +33,14 @@ export function RegisterForm() {
         body: JSON.stringify(values),
       });
       if (!response.ok) {
-        setFormError("Não foi possível concluir o cadastro. Tente novamente.");
+        setFormError(
+          await extractApiError(response, "Não foi possível concluir o cadastro. Tente novamente."),
+        );
         return;
       }
       setSubmitted(true);
     } catch {
-      setFormError("Não foi possível concluir o cadastro. Tente novamente.");
+      setFormError("Sem conexão com o servidor. Verifique sua internet e tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -98,7 +102,7 @@ export function RegisterForm() {
         )}
       </div>
 
-      {formError && <p className="text-sm text-destructive">{formError}</p>}
+      {formError && <FormAlert message={formError} />}
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>
         {isSubmitting && <Loader2 className="animate-spin" />}

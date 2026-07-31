@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +83,7 @@ export function AssumptionsDialog({ open, onOpenChange, ticker }: AssumptionsDia
     setIsSubmitting(false);
 
     if (!response.ok) {
-      toast.error("Não foi possível salvar as premissas.");
+      toast.error(await extractApiError(response, "Não foi possível salvar as premissas."));
       return;
     }
 

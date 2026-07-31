@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,8 +67,7 @@ export function AlertDialog({ open, onOpenChange, defaultTicker = "" }: AlertDia
     setIsSubmitting(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.message ?? "Não foi possível criar o alerta. O ativo existe?");
+      toast.error(await extractApiError(response, "Não foi possível criar o alerta. O ativo existe?"));
       return;
     }
 

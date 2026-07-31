@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Loader2 } from "lucide-react";
 import { z } from "zod";
 import { transactionInputSchema } from "@/schemas/transaction.schema";
@@ -127,8 +128,7 @@ export function TransactionDialog({ open, onOpenChange, transaction, brokers }: 
     setIsSubmitting(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.message ?? "Não foi possível salvar a transação.");
+      toast.error(await extractApiError(response, "Não foi possível salvar a transação."));
       return;
     }
 

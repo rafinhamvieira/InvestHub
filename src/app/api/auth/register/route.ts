@@ -9,7 +9,10 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "VALIDATION_ERROR", issues: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "VALIDATION_ERROR", issues: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
 
   const ipAddress = await getClientIp();
@@ -22,14 +25,27 @@ export async function POST(request: Request) {
     windowSeconds: 3600,
   });
   if (!rateLimit.success) {
-    return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
+    const minutes = Math.ceil(rateLimit.resetInSeconds / 60);
+    return NextResponse.json(
+      {
+        error: "RATE_LIMITED",
+        message: `Limite de cadastros atingido para esta conexão. Tente novamente em ${minutes} minuto(s).`,
+      },
+      { status: 429 },
+    );
   }
 
   try {
     await authService.register(parsed.data, { ipAddress, userAgent });
   } catch (error) {
     logger.error("Falha ao registrar usuário", { error: (error as Error).message });
-    return NextResponse.json({ error: "REGISTER_FAILED" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "REGISTER_FAILED",
+        message: "Não foi possível concluir o cadastro. Tente novamente em instantes.",
+      },
+      { status: 500 },
+    );
   }
 
   // Resposta genérica independente de o e-mail já existir (evita enumeração de usuários).

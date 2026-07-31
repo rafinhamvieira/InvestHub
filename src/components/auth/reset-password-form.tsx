@@ -10,6 +10,8 @@ import {
   resetPasswordFormSchema,
   type ResetPasswordFormInput,
 } from "@/schemas/auth.schema";
+import { extractApiError } from "@/utils/api-error";
+import { FormAlert } from "@/components/shared/form-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,12 +45,7 @@ export function ResetPasswordForm() {
     setIsSubmitting(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      setFormError(
-        data?.error === "SAME_PASSWORD"
-          ? "A nova senha precisa ser diferente da senha atual."
-          : "Link inválido ou expirado. Solicite um novo.",
-      );
+      setFormError(await extractApiError(response, "Link inválido ou expirado. Solicite um novo."));
       return;
     }
 
@@ -95,7 +92,7 @@ export function ResetPasswordForm() {
         )}
       </div>
 
-      {formError && <p className="text-sm text-destructive">{formError}</p>}
+      {formError && <FormAlert message={formError} />}
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>
         {isSubmitting && <Loader2 className="animate-spin" />}

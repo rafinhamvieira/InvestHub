@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/utils/format";
 import type { AllocationOverview, AllocationRow } from "@/types/allocation";
@@ -156,7 +157,7 @@ export function AllocationView({ overview }: AllocationViewProps) {
     if (!row.id) return;
     const response = await fetch(`/api/allocation/targets/${row.id}`, { method: "DELETE" });
     if (!response.ok) {
-      toast.error("Não foi possível remover a meta.");
+      toast.error(await extractApiError(response, "Não foi possível remover a meta."));
       return;
     }
     toast.success("Meta removida.");

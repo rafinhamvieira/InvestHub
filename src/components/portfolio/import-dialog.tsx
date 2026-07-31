@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Download, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 import { IMPORT_TEMPLATE_CSV } from "@/utils/import-parser";
 import { Button } from "@/components/ui/button";
@@ -55,8 +56,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setIsLoading(false);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.message ?? "Não foi possível processar o arquivo.");
+      toast.error(await extractApiError(response, "Não foi possível processar o arquivo."));
       return;
     }
 
