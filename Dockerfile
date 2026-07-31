@@ -4,7 +4,9 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
-COPY package.json package-lock.json* ./
+# O .npmrc carrega legacy-peer-deps (conflito de peers do next-auth beta com o @auth/core);
+# sem ele o `npm ci` resolveria diferente do ambiente local. O glob evita falhar se não existir.
+COPY package.json package-lock.json* .npmrc* ./
 RUN npm ci
 
 # ---------- builder ----------

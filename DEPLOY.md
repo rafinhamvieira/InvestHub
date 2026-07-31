@@ -243,7 +243,12 @@ HTTPS_PORT=8080
 CERT_MODE=dns
 DUCKDNS_TOKEN=cole-aqui-o-token-do-duckdns
 LETSENCRYPT_EMAIL=seu@email.com
-RESEND_API_KEY=re_xxxxxxxxxxxx
+EMAIL_PROVIDER=smtp
+EMAIL_FROM="InvestHub <voce@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=voce@gmail.com
+SMTP_PASSWORD=senha-de-app-do-google
 ```
 
 Notas importantes:
@@ -252,7 +257,7 @@ Notas importantes:
 - **`APP_URL` e `AUTH_URL`** — a URL exata que você digita no navegador, **com a porta**. Se elas não baterem com o endereço real, o login entra em loop de redirecionamento.
 - **`CERT_MODE=dns` + `DUCKDNS_TOKEN`** — obrigatórios quando a porta 80 é bloqueada. Sem o token, a emissão do certificado falha.
 - **`HTTPS_PORT`** — a porta que o Docker publica no servidor; deve casar com o encaminhamento do roteador.
-- **`RESEND_API_KEY`** — crie uma conta gratuita em [resend.com](https://resend.com) e valide seu domínio. **Sem essa chave, os e-mails de confirmação de cadastro, recuperação de senha e alertas não são enviados** (ficam só no log). Como o login exige e-mail confirmado, você não conseguiria entrar. Alternativa se não quiser configurar e-mail agora: veja a seção *Confirmar e-mail manualmente* no fim do guia.
+- **E-mail** — sem isso, confirmação de cadastro, recuperação de senha e alertas não saem (ficam só no log), e como o login exige e-mail confirmado você não entraria. Veja a seção **4.1** logo abaixo.
 - **`MARKET_DATA_API_KEY`** — já preenchida com seu token da brapi.
 - **Não mexa** em `AUTH_SECRET`, `ENCRYPTION_KEY`, `CRON_SECRET` e `POSTGRES_PASSWORD` — são segredos únicos já gerados. Se trocar `ENCRYPTION_KEY` depois que alguém ativar 2FA, os segredos de 2FA ficam ilegíveis.
 
@@ -261,6 +266,56 @@ Proteja o arquivo:
 ```bash
 chmod 600 /opt/investhub/.env
 ```
+
+---
+
+## 4.1 Configurar o envio de e-mail
+
+O sistema envia e-mail em três momentos: confirmação de cadastro, recuperação de senha e alertas. Sem isso configurado, **ninguém consegue concluir um cadastro**, porque o login exige e-mail confirmado.
+
+Há dois provedores suportados, escolhidos por `EMAIL_PROVIDER`.
+
+### Gmail via SMTP (recomendado para começar)
+
+Entrega para **qualquer destinatário**, sem precisar de domínio próprio. Limite prático de cerca de 500 e-mails por dia — folgado para uso pessoal ou um grupo pequeno.
+
+1. Ative a **verificação em duas etapas** na sua conta Google (obrigatório): [myaccount.google.com/security](https://myaccount.google.com/security).
+2. Gere uma **senha de app** em [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). O Google mostra 16 caracteres em quatro blocos — copie **sem os espaços**.
+3. No `.env`:
+
+```ini
+EMAIL_PROVIDER=smtp
+EMAIL_FROM="InvestHub <voce@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=voce@gmail.com
+SMTP_PASSWORD=abcdefghijklmnop
+```
+
+> A senha de app **não** é a senha da sua conta. Ela dá acesso apenas ao envio de e-mail e pode ser revogada a qualquer momento sem afetar sua conta.
+> `EMAIL_FROM` precisa usar o mesmo endereço de `SMTP_USER` — o Gmail reescreve o remetente para a conta autenticada de qualquer forma.
+
+### Resend
+
+Serviço dedicado a e-mail transacional, com painel de entregas. **Só entrega no e-mail dono da conta** até você verificar um domínio próprio (o que exige registros DKIM/SPF no DNS — o DuckDNS não permite).
+
+```ini
+EMAIL_PROVIDER=resend
+EMAIL_FROM="InvestHub <no-reply@seudominio.com.br>"
+RESEND_API_KEY=re_xxxxxxxxxxxx
+```
+
+### Testar o envio
+
+Depois de configurar, recrie o container e mande um e-mail de teste:
+
+```bash
+cd /opt/investhub
+docker compose up -d --force-recreate app
+docker compose run --rm migrate npx tsx scripts/test-email.ts destino@exemplo.com
+```
+
+O script mostra qual provedor está ativo e, em caso de falha, o erro exato devolvido pelo servidor de e-mail.
 
 ---
 
@@ -526,7 +581,14 @@ A migração inicial não foi criada. Volte ao passo 5.
 O IP público da sua casa provavelmente mudou. Confirme com `nslookup investhub.duckdns.org` e compare com seu IP atual. Configure o cron do DuckDNS (seção 0) para que isso se atualize sozinho.
 
 **Não recebo e-mail de confirmação**
-`RESEND_API_KEY` não está configurada ou o domínio não foi verificado na Resend. Veja abaixo como contornar.
+Rode o teste de envio para ver o erro exato:
+```bash
+docker compose run --rm migrate npx tsx scripts/test-email.ts seu@email.com
+```
+Erros comuns:
+- *"You can only send testing emails to your own email address"* — Resend sem domínio verificado. Mude para SMTP do Gmail (seção 4.1) ou verifique um domínio.
+- *"Invalid login: 535-5.7.8 Username and Password not accepted"* — no Gmail, você usou a senha da conta em vez da senha de app, ou colou com espaços.
+- *"Nenhum provedor de e-mail configurado"* — o container está com o `.env` antigo; rode `docker compose up -d --force-recreate app`.
 
 **Build falha por falta de memória**
 Em servidores de 1–2 GB, adicione swap:
