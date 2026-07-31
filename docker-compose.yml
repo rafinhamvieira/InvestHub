@@ -58,12 +58,18 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Usa o próprio node (fetch nativo) em vez de wget: não depende de binário externo
+    # e faz um GET de verdade, igual ao que o navegador faz.
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     networks: [investhub_net]
 
   nginx:
@@ -73,8 +79,6 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:?defina APP_DOMAIN no .env}
       # URL pública completa (com porta, se houver) — usada no redirect de HTTP para HTTPS.
       APP_URL: ${APP_URL:?defina APP_URL no .env}
-      # Só substitui variáveis APP_* no template; $host, $remote_addr etc. ficam intactos.
-      NGINX_ENVSUBST_FILTER: "^APP_"
     volumes:
       - ./docker/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./docker/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
@@ -89,11 +93,21 @@ services:
       - "${HTTPS_PORT:-443}:443"
     depends_on:
       - app
-    # Recarrega a cada 6h para adotar certificados renovados sem downtime.
+    # Renderizamos o template explicitamente: o entrypoint da imagem só faz isso quando o
+    # comando começa com "nginx", e aqui ele começa com "/bin/sh" (por causa do laço de reload).
+    # Listar as variáveis no envsubst também garante que $host, $remote_addr etc. fiquem intactos.
+    # O reload a cada 6h adota certificados renovados sem derrubar o serviço.
     command:
       - /bin/sh
       - -c
-      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+      - |
+        set -e
+        envsubst '$$APP_DOMAIN $$APP_URL' \
+          < /etc/nginx/templates/default.conf.template \
+          > /etc/nginx/conf.d/default.conf
+        nginx -t
+        while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+        exec nginx -g 'daemon off;'
     networks: [investhub_net]
 
   # Renovação automática do certificado (checa a cada 12h; só renova perto do vencimento).

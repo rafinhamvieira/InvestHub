@@ -455,18 +455,22 @@ Aí acesse `http://localhost:8080` no seu navegador (Sistema: PostgreSQL, Servid
 
 ## 10. Renovação do certificado
 
-Automática. O serviço `certbot` verifica a cada 12 horas e renova quando faltarem menos de 30 dias para expirar; o nginx recarrega a cada 6 horas para adotar o certificado novo.
+Automática. O serviço `certbot` verifica a cada 12 horas e renova quando faltarem menos de 30 dias para expirar; o nginx recarrega a cada 6 horas para adotar o certificado novo. O certbot reutiliza sozinho o método usado na emissão — inclusive os hooks do DuckDNS, no modo `dns`.
 
-Testar sem renovar de fato:
+**Teste a renovação logo após o primeiro deploy**, em vez de descobrir um problema perto do vencimento:
 
 ```bash
-docker compose run --rm certbot certbot renew --dry-run
+docker compose run --rm --entrypoint certbot certbot renew --dry-run
 ```
+
+> O `--entrypoint certbot` é necessário: o serviço tem um entrypoint próprio (o laço de renovação a cada 12h) que ignoraria os argumentos e ficaria rodando em loop.
+
+O teste faz todo o processo real contra o ambiente de staging do Let's Encrypt — publica o TXT, valida, limpa — sem substituir o certificado atual nem consumir suas cotas. Deve terminar com `Congratulations, all simulated renewals succeeded`.
 
 Ver a validade atual:
 
 ```bash
-docker compose run --rm certbot certbot certificates
+docker compose run --rm --entrypoint certbot certbot certificates
 ```
 
 ---

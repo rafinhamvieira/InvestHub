@@ -1,5 +1,7 @@
-# Template processado pelo entrypoint do nginx (envsubst) — apenas variáveis APP_* são
-# substituídas (NGINX_ENVSUBST_FILTER=^APP_), então $host, $remote_addr etc. ficam intactos.
+# Template renderizado pelo comando do serviço nginx no docker-compose.yml:
+#   envsubst '$APP_DOMAIN $APP_URL' < este-arquivo > /etc/nginx/conf.d/default.conf
+# Como o envsubst recebe a lista explícita de variáveis, apenas ${APP_DOMAIN} e ${APP_URL}
+# são substituídos — $host, $remote_addr, $upstream_app etc. chegam intactos ao nginx.
 
 # Limite de requisições por IP como camada extra ao rate limit da aplicação.
 limit_req_zone $binary_remote_addr zone=geral:10m rate=30r/s;
