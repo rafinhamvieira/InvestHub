@@ -195,7 +195,9 @@ export const assetDetailService = {
 
     const yearTotals = new Map<string, number>();
     for (const d of dividendRows) {
-      const year = String(d.exDate.getFullYear());
+      // Ano em UTC: a data-ex é um dia do calendário; em fuso negativo, um provento de
+      // 01/01 seria contabilizado no ano anterior.
+      const year = String(d.exDate.getUTCFullYear());
       yearTotals.set(year, (yearTotals.get(year) ?? 0) + Number(d.valuePerShare));
     }
     const dividendsByYear: DividendYearPoint[] = [...yearTotals.entries()]

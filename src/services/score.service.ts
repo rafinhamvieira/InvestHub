@@ -28,7 +28,8 @@ async function countDividendYears(assetIds: string[]): Promise<Map<string, numbe
   const yearsByAsset = new Map<string, Set<number>>();
   for (const dividend of dividends) {
     const years = yearsByAsset.get(dividend.assetId) ?? new Set<number>();
-    years.add(dividend.exDate.getFullYear());
+    // Mesmo motivo do painel de proventos: a data-ex é um dia do calendário.
+    years.add(dividend.exDate.getUTCFullYear());
     yearsByAsset.set(dividend.assetId, years);
   }
 

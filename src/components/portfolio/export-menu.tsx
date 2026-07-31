@@ -4,6 +4,7 @@ import { Download, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { format } from "date-fns";
 import { buildCsv } from "@/utils/csv";
 import { formatCurrency, formatPercent } from "@/utils/format";
+import { formatDateOnly } from "@/utils/date";
 import type { PortfolioData } from "@/types/portfolio";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,7 +96,7 @@ export function ExportMenu({ data }: { data: PortfolioData }) {
       startY: afterPositions + 14,
       head: [["Data", "Ticker", "Operação", "Qtd.", "Preço", "Taxas", "Total"]],
       body: data.transactions.map((t) => [
-        format(new Date(t.date), "dd/MM/yyyy"),
+        formatDateOnly(t.date),
         t.ticker,
         t.type === "BUY" ? "Compra" : "Venda",
         String(t.quantity),

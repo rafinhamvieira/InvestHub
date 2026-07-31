@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { format } from "date-fns";
 import { formatCurrency } from "@/utils/format";
+import { formatDateOnly } from "@/utils/date";
 import type { TransactionDTO } from "@/types/portfolio";
 import { AssetTypeBadge } from "@/components/portfolio/asset-type-badge";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +92,7 @@ export function TransactionsTable({ transactions, onEdit }: TransactionsTablePro
           {transactions.map((transaction) => (
             <TableRow key={transaction.id}>
               <TableCell className="whitespace-nowrap tabular-nums">
-                {format(new Date(transaction.date), "dd/MM/yyyy")}
+                {formatDateOnly(transaction.date)}
               </TableCell>
               <TableCell className="font-medium">{transaction.ticker}</TableCell>
               <TableCell>
@@ -149,7 +149,7 @@ export function TransactionsTable({ transactions, onEdit }: TransactionsTablePro
             <DialogTitle>Excluir transação</DialogTitle>
             <DialogDescription>
               {deleting &&
-                `${deleting.type === "BUY" ? "Compra" : "Venda"} de ${deleting.quantity} ${deleting.ticker} em ${format(new Date(deleting.date), "dd/MM/yyyy")}. A posição será recalculada. Esta ação não pode ser desfeita.`}
+                `${deleting.type === "BUY" ? "Compra" : "Venda"} de ${deleting.quantity} ${deleting.ticker} em ${formatDateOnly(deleting.date)}. A posição será recalculada. Esta ação não pode ser desfeita.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -1,6 +1,5 @@
 "use client";
 
-import { format } from "date-fns";
 import {
   Bar,
   BarChart,
@@ -13,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { DividendItem, DividendYearPoint } from "@/types/asset-detail";
+import { formatDateOnly } from "@/utils/date";
 import {
   Table,
   TableBody,
@@ -102,11 +102,11 @@ export function DividendsPanel({
                     <Badge variant="secondary">{dividend.type}</Badge>
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {format(new Date(dividend.exDate), "dd/MM/yyyy")}
+                    {formatDateOnly(dividend.exDate)}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {dividend.paymentDate
-                      ? format(new Date(dividend.paymentDate), "dd/MM/yyyy")
+                      ? formatDateOnly(dividend.paymentDate)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
