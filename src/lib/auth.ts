@@ -6,6 +6,7 @@ import { authConfig } from "@/lib/auth.config";
 import { authService, AuthError } from "@/services/auth.service";
 import { loginSchema } from "@/schemas/auth.schema";
 import { getClientIp, getUserAgent } from "@/utils/request";
+import { logger } from "@/lib/logger";
 
 class LoginError extends CredentialsSignin {
   constructor(code: string) {
@@ -36,9 +37,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           return await authService.authenticate(parsed.data, { ipAddress, userAgent });
         } catch (error) {
+          // O Auth.js registra apenas "CredentialsSignin", sem o motivo. Logamos aqui para
+          // que a causa apareça em `docker compose logs app` durante a operação.
           if (error instanceof AuthError) {
+            logger.warn("Login recusado", { email: parsed.data.email, code: error.code, ipAddress });
             throw new LoginError(error.code);
           }
+          logger.error("Erro inesperado no login", {
+            email: parsed.data.email,
+            error: (error as Error).message,
+          });
           throw new LoginError("UNKNOWN_ERROR");
         }
       },
