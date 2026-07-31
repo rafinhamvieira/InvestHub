@@ -104,8 +104,10 @@ services:
     restart: unless-stopped
     environment:
       DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+      DUCKDNS_PROPAGATION_SECONDS: ${DUCKDNS_PROPAGATION_SECONDS:-30}
     volumes:
       - certbot_conf:/etc/letsencrypt
+      - certbot_logs:/var/log/letsencrypt
       - certbot_www:/var/www/certbot
       - ./docker/hooks:/hooks:ro
     entrypoint:
@@ -154,3 +156,4 @@ volumes:
   redis_data:
   certbot_conf:
   certbot_www:
+  certbot_logs:

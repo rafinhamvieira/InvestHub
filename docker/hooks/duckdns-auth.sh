@@ -8,8 +8,10 @@
 # Publicamos o TXT via API do DuckDNS e esperamos a propagação.
 set -e
 
+. "$(dirname "$0")/http-get.sh"
+
 if [ -z "$DUCKDNS_TOKEN" ]; then
-  echo "ERRO: DUCKDNS_TOKEN não está definido no ambiente do container certbot."
+  echo "ERRO: DUCKDNS_TOKEN não está definido no ambiente do container certbot." >&2
   exit 1
 fi
 
@@ -17,11 +19,10 @@ fi
 SUBDOMAIN=$(echo "$CERTBOT_DOMAIN" | sed 's/\.duckdns\.org$//')
 
 echo "[duckdns] publicando TXT para $SUBDOMAIN..."
-RESPONSE=$(curl -s -m 30 \
-  "https://www.duckdns.org/update?domains=${SUBDOMAIN}&token=${DUCKDNS_TOKEN}&txt=${CERTBOT_VALIDATION}")
+RESPONSE=$(http_get "https://www.duckdns.org/update?domains=${SUBDOMAIN}&token=${DUCKDNS_TOKEN}&txt=${CERTBOT_VALIDATION}")
 
 if [ "$RESPONSE" != "OK" ]; then
-  echo "ERRO: DuckDNS respondeu '$RESPONSE' (esperado 'OK'). Verifique DUCKDNS_TOKEN e APP_DOMAIN."
+  echo "ERRO: DuckDNS respondeu '$RESPONSE' (esperado 'OK'). Verifique DUCKDNS_TOKEN e APP_DOMAIN." >&2
   exit 1
 fi
 

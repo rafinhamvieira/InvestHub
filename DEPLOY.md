@@ -486,11 +486,22 @@ O Let's Encrypt não conseguiu alcançar o servidor na **porta 80** — e não e
 O token está errado ou o subdomínio não pertence à sua conta. Confira o `DUCKDNS_TOKEN` no `.env` (copie de novo do topo de duckdns.org) e se o `APP_DOMAIN` é exatamente o subdomínio que você criou.
 
 **Certbot falha no modo `dns` com "Incorrect TXT record"**
-O registro TXT ainda não tinha propagado quando o Let's Encrypt consultou. Aumente a espera adicionando ao `.env`:
+Leia a mensagem imediatamente acima dessa linha no terminal — ela diz por que o TXT não foi publicado. Se o hook reportou erro, corrija a causa. Se o hook rodou bem e mesmo assim o TXT não foi encontrado, o registro não propagou a tempo; aumente a espera no `.env` e rode de novo:
 ```ini
 DUCKDNS_PROPAGATION_SECONDS=60
 ```
-E rode o script novamente.
+
+**Onde fica o log detalhado do certbot**
+O log vive dentro do container, não no host — por isso `cat /var/log/letsencrypt/letsencrypt.log` no servidor retorna "No such file". Ele é preservado no volume `investhub_certbot_logs`:
+```bash
+docker run --rm -v investhub_certbot_logs:/logs alpine tail -n 80 /logs/letsencrypt.log
+```
+
+**Verificar manualmente se o TXT está no ar**
+Enquanto o desafio está publicado, consulte de outra máquina:
+```bash
+dig +short TXT _acme-challenge.investhub.duckdns.org
+```
 
 **`too many failed authorizations` ou `rate limit`**
 O Let's Encrypt limita 5 emissões por domínio por semana. Use `LETSENCRYPT_STAGING=1` enquanto resolve o problema e só volte ao modo real quando o staging funcionar.

@@ -22,6 +22,7 @@ cd "$(dirname "$0")/.."
 PROJECT="investhub"
 VOL_CONF="${PROJECT}_certbot_conf"
 VOL_WWW="${PROJECT}_certbot_www"
+VOL_LOGS="${PROJECT}_certbot_logs"
 TMP_NGINX="${PROJECT}-certbot-bootstrap"
 
 if [ ! -f .env ]; then
@@ -61,6 +62,7 @@ fi
 
 docker volume create "$VOL_CONF" >/dev/null
 docker volume create "$VOL_WWW" >/dev/null
+docker volume create "$VOL_LOGS" >/dev/null
 
 # ============================================================
 # Modo DNS-01 (DuckDNS)
@@ -93,8 +95,10 @@ if [ "$MODE" = "dns" ]; then
   echo "==> Solicitando certificado (validação DNS-01, sem abrir portas)..."
   docker run --rm \
     -v "$VOL_CONF:/etc/letsencrypt" \
+    -v "$VOL_LOGS:/var/log/letsencrypt" \
     -v "$(pwd)/docker/hooks:/hooks:ro" \
     -e "DUCKDNS_TOKEN=$DUCKDNS_TOKEN" \
+    -e "DUCKDNS_PROPAGATION_SECONDS=$(read_env DUCKDNS_PROPAGATION_SECONDS)" \
     certbot/certbot:latest \
     certonly --manual --preferred-challenges dns \
       --manual-auth-hook "sh /hooks/duckdns-auth.sh" \
@@ -144,6 +148,7 @@ else
   echo "==> Solicitando certificado (validação HTTP-01)..."
   docker run --rm \
     -v "$VOL_CONF:/etc/letsencrypt" \
+    -v "$VOL_LOGS:/var/log/letsencrypt" \
     -v "$VOL_WWW:/var/www/certbot" \
     certbot/certbot:latest \
     certonly --webroot -w /var/www/certbot \
