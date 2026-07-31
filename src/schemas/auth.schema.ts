@@ -21,11 +21,19 @@ export const registerSchema = z
   });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+/**
+ * O signIn do Auth.js monta o corpo com `new URLSearchParams({...options})`, e isso
+ * converte `undefined` na string literal "undefined". Sem normalizar, um campo opcional
+ * não preenchido reprovaria a validação e o login falharia antes mesmo de ser avaliado.
+ */
+const absentAsUndefined = (value: unknown) =>
+  value === "undefined" || value === "null" || value === "" || value === null ? undefined : value;
+
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email("E-mail inválido."),
   password: z.string().min(1, "Informe sua senha."),
-  totpCode: z.string().length(6).optional(),
-  recoveryCode: z.string().optional(),
+  totpCode: z.preprocess(absentAsUndefined, z.string().length(6).optional()),
+  recoveryCode: z.preprocess(absentAsUndefined, z.string().min(1).optional()),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 

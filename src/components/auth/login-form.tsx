@@ -57,19 +57,24 @@ export function LoginForm() {
     const result = await signIn("credentials", {
       email: values.email,
       password: values.password,
-      totpCode: code,
+      // Só enviamos o código quando existe: o Auth.js serializa o corpo com URLSearchParams,
+      // e um `undefined` viraria a string "undefined", reprovando a validação no servidor.
+      ...(code ? { totpCode: code } : {}),
       redirect: false,
     });
 
     setIsSubmitting(false);
 
     if (result?.error) {
-      if (result.error === "TWO_FACTOR_REQUIRED") {
+      // `error` é sempre "CredentialsSignin"; o motivo específico vem em `code`.
+      const reason = result.code ?? result.error;
+
+      if (reason === "TWO_FACTOR_REQUIRED") {
         setRequiresTwoFactor(true);
         return;
       }
-      if (result.error === "EMAIL_NOT_VERIFIED") setNeedsVerification(true);
-      setFormError(ERROR_MESSAGES[result.error] ?? "Não foi possível entrar. Tente novamente.");
+      if (reason === "EMAIL_NOT_VERIFIED") setNeedsVerification(true);
+      setFormError(ERROR_MESSAGES[reason] ?? "Não foi possível entrar. Tente novamente.");
       return;
     }
 

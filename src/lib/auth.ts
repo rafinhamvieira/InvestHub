@@ -29,6 +29,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(rawCredentials) {
         const parsed = loginSchema.safeParse(rawCredentials);
         if (!parsed.success) {
+          logger.warn("Credenciais em formato inválido", {
+            issues: parsed.error.flatten().fieldErrors,
+          });
           throw new LoginError("INVALID_CREDENTIALS");
         }
 
