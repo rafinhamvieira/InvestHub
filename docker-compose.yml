@@ -71,6 +71,8 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?defina APP_DOMAIN no .env}
+      # URL pública completa (com porta, se houver) — usada no redirect de HTTP para HTTPS.
+      APP_URL: ${APP_URL:?defina APP_URL no .env}
       # Só substitui variáveis APP_* no template; $host, $remote_addr etc. ficam intactos.
       NGINX_ENVSUBST_FILTER: "^APP_"
     volumes:
@@ -79,8 +81,12 @@ services:
       - certbot_conf:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
     ports:
-      - "80:80"
-      - "443:443"
+      # HTTP_PORT só é útil para validação HTTP-01 e para redirecionar quem digita http://.
+      # Com a porta 80 bloqueada pelo provedor, ela simplesmente não recebe tráfego externo.
+      - "${HTTP_PORT:-80}:80"
+      # Porta HTTPS publicada no host. Use 443 quando ela estiver liberada; caso contrário,
+      # defina HTTPS_PORT com a porta que o roteador encaminha (ex: 8080) e inclua-a em APP_URL.
+      - "${HTTPS_PORT:-443}:443"
     depends_on:
       - app
     # Recarrega a cada 6h para adotar certificados renovados sem downtime.
@@ -91,16 +97,21 @@ services:
     networks: [investhub_net]
 
   # Renovação automática do certificado (checa a cada 12h; só renova perto do vencimento).
+  # O certbot reutiliza o método de validação registrado na emissão inicial — webroot ou
+  # os hooks DNS do DuckDNS —, então o mesmo serviço atende aos dois modos.
   certbot:
     image: certbot/certbot:latest
     restart: unless-stopped
+    environment:
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
     volumes:
       - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
+      - ./docker/hooks:/hooks:ro
     entrypoint:
       - /bin/sh
       - -c
-      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+      - "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
   # Job agendado: sincroniza cotações/fundamentos a cada 15 min e avalia alertas.
   # Requer CRON_SECRET definido no .env.

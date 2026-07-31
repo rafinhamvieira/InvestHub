@@ -2,7 +2,9 @@
 
 Guia completo para colocar o InvestHub no ar em um servidor Ubuntu com HTTPS (Let's Encrypt) e renovação automática de certificado.
 
-> **Sobre "somente 443"**: todo o tráfego da aplicação roda em HTTPS na porta 443. A porta 80 fica aberta apenas para (a) o Let's Encrypt validar a posse do domínio e (b) redirecionar quem digitar `http://` para `https://`. Nenhum conteúdo da aplicação é servido em HTTP. Fechar a 80 completamente impede a emissão e a renovação do certificado.
+> **Sobre "somente HTTPS"**: todo o tráfego da aplicação roda em HTTPS. A porta 80 serve apenas para redirecionar quem digitar `http://` — nenhum conteúdo é servido sem criptografia.
+
+> **Servidor em casa, atrás de um roteador?** Provedores residenciais brasileiros costumam bloquear as portas 80 e 443 de entrada. Isso tem duas consequências que o guia já resolve: a validação do certificado passa a ser por **DNS-01** (registro TXT, sem abrir porta nenhuma) e o acesso fica em uma porta alternativa (ex: `https://seudominio.duckdns.org:8080`). Veja a seção **0.1**.
 
 ---
 
@@ -28,7 +30,7 @@ Não custa nada, leva dois minutos e gera um certificado tão válido quanto o d
 2. No campo **sub domain**, digite o nome desejado (ex: `investhub`) e clique em **add domain**.
    Se o nome já estiver em uso, tente uma variação (`investhub-rafael`, `investhub-app`).
 3. Na linha do domínio criado, preencha **current ip** com o IP público do servidor e clique em **update ip**.
-4. Anote o **token** exibido no topo da página (guarde, é a sua credencial).
+4. **Copie o `token`** exibido no topo da página. Ele vai no `.env` (`DUCKDNS_TOKEN`) e é o que permite emitir o certificado sem abrir portas. Trate como senha.
 
 Seu domínio será `SEUNOME.duckdns.org`.
 
@@ -71,7 +73,41 @@ Independentemente do caminho, valide a resolução do seu computador:
 nslookup investhub.duckdns.org
 ```
 
-O IP retornado precisa ser o do servidor. Se não for, **não prossiga** — a emissão do certificado vai falhar e cada tentativa frustrada consome parte do limite semanal do Let's Encrypt.
+O IP retornado precisa ser o do servidor (ou o IP público da sua casa, se o servidor estiver na sua rede).
+
+---
+
+## 0.1 Servidor em casa: portas bloqueadas e encaminhamento
+
+Se o servidor está na sua rede doméstica, o provedor quase certamente bloqueia as portas 80 e 443 de entrada. Isso significa:
+
+**A validação do certificado não pode ser HTTP-01.** O Let's Encrypt sempre conecta na **porta 80** para esse desafio — não existe como redirecioná-lo para outra porta. Com a 80 bloqueada, use `CERT_MODE=dns`: o certbot publica um registro TXT no DuckDNS e o Let's Encrypt valida por DNS, sem tocar em porta nenhuma. É o modo já configurado no `.env`.
+
+**O acesso vai carregar a porta na URL.** Sem a 443 liberada, o endereço fica `https://investhub.duckdns.org:8080`. Não há como esconder isso sem a 443.
+
+### Encaminhamento de porta no roteador
+
+No painel do roteador, crie uma regra de *port forwarding* / *redirecionamento de portas*:
+
+```
+Porta externa: 8080    →    IP interno do servidor : 8080    (TCP)
+```
+
+Mantenha a porta externa e a interna **iguais** (8080 → 8080) — é o que o `.env` já assume (`HTTPS_PORT=8080`). Se o seu roteador só permite portas diferentes, ajuste `HTTPS_PORT` para a porta interna e `APP_URL` para a externa.
+
+Fixe também o IP interno do servidor (reserva de DHCP no roteador), senão a regra quebra quando o IP mudar.
+
+### O que esperar de um servidor doméstico
+
+Vale saber de antemão, para não ser surpresa depois:
+
+- **IP dinâmico** — a maioria das conexões residenciais troca de IP periodicamente. O cron do DuckDNS (mostrado acima) resolve isso automaticamente.
+- **Disponibilidade** — quedas de energia e de internet derrubam o sistema. Sem nobreak, conte com isso.
+- **Upload** — planos residenciais têm upload bem menor que download; é o upload que serve as páginas.
+- **Segurança** — você está expondo uma porta da sua rede doméstica à internet. Mantenha o servidor atualizado, ative o 2FA na aplicação e considere isolar o servidor em uma VLAN se o roteador permitir.
+- **Termos do provedor** — alguns contratos residenciais proíbem hospedar serviços. Vale conferir se a plataforma for virar algo comercial.
+
+Se em algum momento quiser eliminar tudo isso, uma VPS básica (Hetzner, DigitalOcean, Contabo) custa entre US$ 4 e US$ 6 por mês, tem IP fixo e portas 80/443 livres — aí você volta para `CERT_MODE=http`, `HTTPS_PORT=443` e o endereço fica limpo, sem porta.
 
 ---
 
@@ -91,12 +127,16 @@ sudo apt install -y curl git ufw ca-certificates
 
 ### Firewall
 
+Libere o SSH e a porta em que o sistema será acessado. No cenário de servidor doméstico com a 443 bloqueada pelo provedor, essa porta é a **8080**:
+
 ```bash
 sudo ufw allow OpenSSH
+sudo ufw allow 8080/tcp
 sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
 sudo ufw --force enable
 ```
+
+> Se você estiver em uma VPS com as portas livres, troque `8080/tcp` por `443/tcp` (e ajuste `HTTPS_PORT=443` no `.env`).
 
 Confira o resultado:
 
@@ -104,7 +144,7 @@ Confira o resultado:
 sudo ufw status verbose
 ```
 
-Devem aparecer apenas 22 (SSH), 80 e 443. Postgres, Redis e a aplicação Next.js **não** são expostos ao host — vivem só na rede interna do Docker.
+Postgres, Redis e a aplicação Next.js **não** são expostos ao host — vivem só na rede interna do Docker. Só o nginx publica portas.
 
 ### Fuso horário (opcional, ajuda nos logs)
 
@@ -193,19 +233,25 @@ O arquivo `.env` já vem com segredos gerados. Só é preciso trocar o domínio,
 nano /opt/investhub/.env
 ```
 
-Confira/ajuste estas linhas (o exemplo abaixo usa o domínio DuckDNS):
+Confira/ajuste estas linhas (o exemplo abaixo é o cenário servidor doméstico + DuckDNS + porta 8080):
 
 ```ini
 APP_DOMAIN=investhub.duckdns.org
-APP_URL=https://investhub.duckdns.org
-AUTH_URL=https://investhub.duckdns.org
+APP_URL=https://investhub.duckdns.org:8080
+AUTH_URL=https://investhub.duckdns.org:8080
+HTTPS_PORT=8080
+CERT_MODE=dns
+DUCKDNS_TOKEN=cole-aqui-o-token-do-duckdns
 LETSENCRYPT_EMAIL=seu@email.com
 RESEND_API_KEY=re_xxxxxxxxxxxx
 ```
 
 Notas importantes:
 
-- **`APP_DOMAIN`** — sem `https://`, sem barra no final. Precisa ser exatamente o domínio que você reivindicou. Se `investhub` já estava em uso no DuckDNS e você registrou outro nome, troque nas três linhas (`APP_DOMAIN`, `APP_URL`, `AUTH_URL`).
+- **`APP_DOMAIN`** — sem `https://`, sem porta, sem barra final. Se `investhub` já estava em uso no DuckDNS e você registrou outro nome, troque aqui e nas URLs.
+- **`APP_URL` e `AUTH_URL`** — a URL exata que você digita no navegador, **com a porta**. Se elas não baterem com o endereço real, o login entra em loop de redirecionamento.
+- **`CERT_MODE=dns` + `DUCKDNS_TOKEN`** — obrigatórios quando a porta 80 é bloqueada. Sem o token, a emissão do certificado falha.
+- **`HTTPS_PORT`** — a porta que o Docker publica no servidor; deve casar com o encaminhamento do roteador.
 - **`RESEND_API_KEY`** — crie uma conta gratuita em [resend.com](https://resend.com) e valide seu domínio. **Sem essa chave, os e-mails de confirmação de cadastro, recuperação de senha e alertas não são enviados** (ficam só no log). Como o login exige e-mail confirmado, você não conseguiria entrar. Alternativa se não quiser configurar e-mail agora: veja a seção *Confirmar e-mail manualmente* no fim do guia.
 - **`MARKET_DATA_API_KEY`** — já preenchida com seu token da brapi.
 - **Não mexa** em `AUTH_SECRET`, `ENCRYPTION_KEY`, `CRON_SECRET` e `POSTGRES_PASSWORD` — são segredos únicos já gerados. Se trocar `ENCRYPTION_KEY` depois que alguém ativar 2FA, os segredos de 2FA ficam ilegíveis.
@@ -240,16 +286,23 @@ ls prisma/migrations/
 
 ## 6. Emitir o certificado HTTPS
 
-Com o DNS já apontando para o servidor:
-
 ```bash
 cd /opt/investhub
 sh docker/init-letsencrypt.sh
 ```
 
-O script confere se o DNS aponta para este servidor, sobe um nginx temporário na porta 80 (o nginx de produção não inicia sem os arquivos de certificado), pede o certificado ao Let's Encrypt via desafio HTTP-01 e encerra o nginx temporário. A partir daí os certificados ficam no volume `investhub_certbot_conf` e o nginx de produção consegue subir.
+O script detecta o modo pelo `CERT_MODE` do `.env`:
 
-> **Quer testar antes?** Defina `LETSENCRYPT_STAGING=1` no `.env` e rode o script. O certificado gerado não é confiável pelo navegador (vai dar aviso de segurança), mas não consome o limite de 5 emissões por semana do Let's Encrypt. Depois, volte para `LETSENCRYPT_STAGING=0` e rode o script de novo.
+- **`CERT_MODE=dns`** (servidor doméstico, portas bloqueadas) — valida o token do DuckDNS, publica um registro TXT com o desafio, espera a propagação e remove o TXT ao final. **Nenhuma porta precisa estar aberta.**
+- **`CERT_MODE=http`** (VPS com portas livres) — confere se o DNS aponta para este servidor, sobe um nginx temporário na porta 80 (o de produção não inicia sem os `.pem`), valida e encerra o temporário.
+
+Nos dois casos o certificado fica no volume `investhub_certbot_conf`, e daí em diante a renovação é automática pelo serviço `certbot` — que reutiliza sozinho o mesmo método usado na emissão.
+
+> **Quer testar antes?** Defina `LETSENCRYPT_STAGING=1` no `.env` e rode o script. O certificado gerado não é confiável pelo navegador (vai dar aviso de segurança), mas não consome o limite de 5 emissões por semana do Let's Encrypt. Depois, volte para `LETSENCRYPT_STAGING=0`, apague o certificado de teste e emita o real:
+> ```bash
+> docker run --rm -v investhub_certbot_conf:/etc/letsencrypt certbot/certbot delete --cert-name investhub.duckdns.org
+> sh docker/init-letsencrypt.sh
+> ```
 
 ---
 
@@ -286,17 +339,19 @@ Cadastra alguns tickers conhecidos (PETR4, VALE3, HGLG11...) para você já ter 
 
 ## 8. Verificar
 
-Abra `https://investhub.duckdns.org` no navegador. Você deve ver a tela de login com cadeado válido.
+Abra `https://investhub.duckdns.org:8080` no navegador (com a porta!). Você deve ver a tela de login com cadeado válido.
 
 Checagens rápidas pelo terminal:
 
 ```bash
-# Deve responder {"status":"ok"}
-curl https://investhub.duckdns.org/api/health
+# Do próprio servidor — deve responder {"status":"ok"}
+curl -k https://localhost:8080/api/health
 
-# Deve responder 301 para https
-curl -I http://investhub.duckdns.org
+# De fora da sua rede (celular no 4G, por exemplo) — confirma que o roteador encaminha
+curl https://investhub.duckdns.org:8080/api/health
 ```
+
+> Muitos roteadores não permitem acessar o próprio IP público de dentro da rede local (*NAT loopback*). Se de dentro de casa não abrir mas do celular no 4G abrir, o sistema está funcionando — é limitação do roteador. Nesse caso, acesse pelo IP interno do servidor quando estiver em casa.
 
 Crie sua conta em `/register`, confirme o e-mail pelo link recebido e entre.
 
@@ -424,8 +479,18 @@ O certificado ainda não foi emitido. Rode `sh docker/init-letsencrypt.sh`.
 **O script de certificado falha com `port is already allocated`**
 Algo já está ocupando a porta 80 — provavelmente o próprio nginx da stack. Pare tudo antes (`docker compose down`), rode o script e só então suba de novo.
 
-**Certbot falha com `Timeout during connect` ou `unauthorized`**
-O Let's Encrypt não conseguiu alcançar o servidor na porta 80. Verifique: o DNS aponta para o IP certo (`nslookup`)? A porta 80 está liberada no `ufw` **e** no firewall do provedor (AWS Security Group, painel da Hetzner/DigitalOcean etc.)?
+**Certbot falha com `Timeout during connect` ou `unauthorized` (modo `http`)**
+O Let's Encrypt não conseguiu alcançar o servidor na **porta 80** — e não existe forma de apontá-lo para outra porta, esse desafio é fixo na 80. Se o seu provedor bloqueia a 80 (padrão em internet residencial), mude para `CERT_MODE=dns` no `.env` e rode o script de novo. Em VPS, verifique o `ufw` e o firewall do painel (Security Group na AWS, etc.).
+
+**Certbot falha no modo `dns` com "DuckDNS respondeu 'KO'"**
+O token está errado ou o subdomínio não pertence à sua conta. Confira o `DUCKDNS_TOKEN` no `.env` (copie de novo do topo de duckdns.org) e se o `APP_DOMAIN` é exatamente o subdomínio que você criou.
+
+**Certbot falha no modo `dns` com "Incorrect TXT record"**
+O registro TXT ainda não tinha propagado quando o Let's Encrypt consultou. Aumente a espera adicionando ao `.env`:
+```ini
+DUCKDNS_PROPAGATION_SECONDS=60
+```
+E rode o script novamente.
 
 **`too many failed authorizations` ou `rate limit`**
 O Let's Encrypt limita 5 emissões por domínio por semana. Use `LETSENCRYPT_STAGING=1` enquanto resolve o problema e só volte ao modo real quando o staging funcionar.
@@ -437,7 +502,13 @@ Confira se `DATABASE_URL` no `.env` usa o host `postgres` (nome do serviço), n�
 A migração inicial não foi criada. Volte ao passo 5.
 
 **Login redireciona em loop ou dá erro de sessão**
-`AUTH_URL` precisa ser exatamente `https://seu-dominio`, com https e sem barra final. Depois de corrigir: `docker compose up -d --force-recreate app`.
+`AUTH_URL` precisa ser exatamente o endereço que você digita no navegador — **incluindo a porta** e sem barra final (ex: `https://investhub.duckdns.org:8080`). Depois de corrigir: `docker compose up -d --force-recreate app`.
+
+**O site abre do celular no 4G, mas não de dentro de casa**
+É o *NAT loopback* do roteador, que não deixa acessar o próprio IP público de dentro da rede. O sistema está funcionando. Alguns roteadores têm a opção "NAT loopback"/"hairpin NAT" para habilitar; se não tiver, use o IP interno do servidor quando estiver em casa.
+
+**Parou de abrir depois de alguns dias**
+O IP público da sua casa provavelmente mudou. Confirme com `nslookup investhub.duckdns.org` e compare com seu IP atual. Configure o cron do DuckDNS (seção 0) para que isso se atualize sozinho.
 
 **Não recebo e-mail de confirmação**
 `RESEND_API_KEY` não está configurada ou o domínio não foi verificado na Resend. Veja abaixo como contornar.

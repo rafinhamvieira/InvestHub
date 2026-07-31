@@ -18,8 +18,10 @@ server {
         root /var/www/certbot;
     }
 
+    # Redireciona para a URL pública configurada. Usamos ${APP_URL} (e não https://$host)
+    # porque a porta pública pode não ser a 443 — nesse caso o redirect precisa carregá-la.
     location / {
-        return 301 https://$host$request_uri;
+        return 301 ${APP_URL}$request_uri;
     }
 }
 
