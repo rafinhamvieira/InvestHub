@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/shared/logo";
 import { NAV_GROUPS } from "@/config/nav";
 
 export function Sidebar() {
@@ -11,9 +11,8 @@ export function Sidebar() {
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r bg-card lg:flex">
-      <div className="flex h-16 items-center gap-2 border-b px-6">
-        <TrendingUp className="size-5 text-primary" />
-        <span className="text-lg font-semibold tracking-tight">InvestHub</span>
+      <div className="flex h-16 items-center border-b px-6">
+        <Logo size={32} wordmarkClassName="text-lg" />
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-6 scrollbar-thin">

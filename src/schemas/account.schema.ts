@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { checkPasswordStrength } from "@/validators/password.validator";
+import { displayNameField } from "@/schemas/auth.schema";
 
 export const profileSchema = z.object({
-  name: z.string().trim().min(2, "Informe seu nome.").max(120),
+  // Mesma regra do cadastro: senão bastaria registrar-se com nome válido e renomear depois.
+  name: displayNameField,
   riskProfile: z.enum(["CONSERVATIVE", "MODERATE", "AGGRESSIVE", "CUSTOM"]),
 });
 export type ProfileInput = z.infer<typeof profileSchema>;

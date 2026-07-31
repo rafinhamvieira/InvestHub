@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { checkPasswordStrength } from "@/validators/password.validator";
+import { isReservedName, RESERVED_NAME_MESSAGE } from "@/validators/reserved-name.validator";
+
+/** Nome de exibição: mínimo dois caracteres e sem termos reservados à administração. */
+export const displayNameField = z
+  .string()
+  .trim()
+  .min(2, "Informe seu nome completo.")
+  .max(120)
+  .refine((value) => !isReservedName(value), { message: RESERVED_NAME_MESSAGE });
 
 const passwordField = z
   .string()
@@ -10,7 +19,7 @@ const passwordField = z
 
 export const registerSchema = z
   .object({
-    name: z.string().trim().min(2, "Informe seu nome completo.").max(120),
+    name: displayNameField,
     email: z.string().trim().toLowerCase().email("E-mail inválido."),
     password: passwordField,
     confirmPassword: z.string().min(1, "Repita a senha."),

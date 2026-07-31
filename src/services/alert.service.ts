@@ -4,7 +4,7 @@ import { assetRepository } from "@/repositories/asset.repository";
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { assetFundamentalRepository } from "@/repositories/asset-fundamental.repository";
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, alertEmailTemplate } from "@/lib/email";
 import { logger } from "@/lib/logger";
 import { checkAlertCondition, describeAlert, type AlertMarketData } from "@/utils/alert-conditions";
 import { grahamFairPrice, bazinCeilingPrice, lpaFromPl, vpaFromPvp, safetyMargin } from "@/utils/valuation-math";
@@ -147,7 +147,11 @@ export const alertService = {
           await sendEmail({
             to: alert.user.email,
             subject: `InvestHub — Alerta ${alert.asset.ticker}`,
-            html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;"><h2>Alerta disparado</h2><p>${message}</p><p><a href="${process.env.APP_URL}/asset/${alert.asset.ticker}">Ver ativo</a></p></div>`,
+            html: alertEmailTemplate(
+              message,
+              `${process.env.APP_URL}/asset/${alert.asset.ticker}`,
+              alert.asset.ticker,
+            ),
           });
         } catch (error) {
           logger.error("Falha ao enviar e-mail de alerta", {

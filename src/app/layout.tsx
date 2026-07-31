@@ -11,11 +11,28 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mon
 
 export const metadata: Metadata = {
   title: {
-    default: "InvestHub — Assistente pessoal de investimentos",
+    default: "InvestHub — Invista melhor. Viva o futuro.",
     template: "%s · InvestHub",
   },
   description:
     "Plataforma premium para gestão e análise de investimentos na B3: carteira, dividendos, valuation e recomendações inteligentes.",
+  applicationName: "InvestHub",
+  // Versões reduzidas: o arquivo original tem 1,3 MB, peso desnecessário para um favicon
+  // e acima do que várias redes sociais aceitam ao gerar a pré-visualização.
+  icons: {
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
+    apple: "/icon-512.png",
+  },
+  openGraph: {
+    title: "InvestHub — Invista melhor. Viva o futuro.",
+    description:
+      "Carteira, dividendos, valuation e recomendações de aporte para a Bolsa Brasileira.",
+    siteName: "InvestHub",
+    locale: "pt_BR",
+    type: "website",
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "InvestHub" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

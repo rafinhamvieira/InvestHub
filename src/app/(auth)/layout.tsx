@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { TrendingUp } from "lucide-react";
+import { LogoLockup } from "@/components/shared/logo";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen">
-      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-[hsl(222,47%,8%)] to-[hsl(222,47%,14%)] p-12 text-white lg:flex">
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
-          <TrendingUp className="size-6" />
-          InvestHub
+      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-[#0B1730] to-[#152A50] p-12 text-white lg:flex">
+        <Link href="/" aria-label="InvestHub">
+          <LogoLockup size={132} />
         </Link>
         <div className="space-y-4">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
@@ -22,7 +21,13 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <p className="text-xs text-white/40">© {new Date().getFullYear()} InvestHub</p>
       </div>
       <div className="flex w-full items-center justify-center bg-background p-6 lg:w-1/2">
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="w-full max-w-sm space-y-8">
+          {/* Em telas estreitas o painel da marca some, então repetimos a marca aqui. */}
+          <Link href="/" aria-label="InvestHub" className="flex justify-center lg:hidden">
+            <LogoLockup size={104} />
+          </Link>
+          {children}
+        </div>
       </div>
     </div>
   );

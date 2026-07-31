@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { extractApiError } from "@/utils/api-error";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +40,7 @@ export function ProfileForm({ initialName, email, initialRiskProfile }: ProfileF
     setIsSaving(false);
 
     if (!response.ok) {
-      toast.error("Não foi possível salvar o perfil.");
+      toast.error(await extractApiError(response, "Não foi possível salvar o perfil."));
       return;
     }
     toast.success("Perfil atualizado.");
