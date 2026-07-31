@@ -13,6 +13,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# O Git não versiona diretórios vazios: se public/ não tiver nenhum arquivo, ele não
+# chega no clone e o COPY do estágio runner falha. Garantir a pasta aqui torna o build
+# independente disso.
+RUN mkdir -p /app/public
 RUN npx prisma generate
 RUN npm run build
 

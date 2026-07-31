@@ -1,0 +1,3 @@
+# Mantém o diretório public/ no controle de versão.
+# O Next.js serve arquivos estáticos daqui (imagens, robots.txt, manifest...).
+# O Git não versiona pastas vazias, e o Dockerfile copia esta pasta no build.
