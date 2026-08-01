@@ -43,3 +43,5 @@ npm-debug.log*
 docker-data/
 
 HANDOFF.md
+# backups do banco (gerados pelo serviço backup do compose)
+backups

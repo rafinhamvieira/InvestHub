@@ -8,6 +8,7 @@ import { assetDividendRepository } from "@/repositories/asset-dividend.repositor
 import { alertService } from "@/services/alert.service";
 import { dividendSyncService } from "@/services/dividend-sync.service";
 import { fixedIncomeService } from "@/services/fixed-income.service";
+import { syncHealthService } from "@/services/sync-health.service";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -224,6 +225,19 @@ export const marketSyncService = {
 
   /** Sincroniza todos os ativos ativos (uso do job agendado). */
   async syncAll(): Promise<SyncReport> {
+    try {
+      const report = await this.runFullSync();
+      await syncHealthService.recordSuccess();
+      return report;
+    } catch (error) {
+      // O vigia precisa saber da falha antes de ela subir para a rota: é a contagem de
+      // falhas seguidas que dispara o aviso ao administrador.
+      await syncHealthService.recordFailure((error as Error).message);
+      throw error;
+    }
+  },
+
+  async runFullSync(): Promise<SyncReport> {
     const catalog = await this.syncCatalog().catch((error) => {
       logger.error("Falha ao sincronizar catálogo", { error: (error as Error).message });
       return { assetsCreated: 0, pricesWritten: 0 };

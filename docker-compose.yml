@@ -153,6 +153,42 @@ services:
         done
     networks: [investhub_net]
 
+  # Backup do banco. Roda uma vez ao subir e depois a cada BACKUP_INTERVAL_SECONDS.
+  #
+  # Dump vai para ./backups no host, fora dos volumes do Docker de propósito: backup que
+  # mora no mesmo volume que o banco não sobrevive ao acidente que ele deveria cobrir.
+  # Arquivos mais antigos que BACKUP_RETENTION_DAYS são apagados a cada rodada.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_USER: ${POSTGRES_USER:-investhub}
+      POSTGRES_DB: ${POSTGRES_DB:-investhub}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Backup iniciado — a cada $${BACKUP_INTERVAL_SECONDS}s, mantendo $${BACKUP_RETENTION_DAYS} dias";
+        while true; do
+          FILE="/backups/investhub-$$(date +%Y%m%d-%H%M).sql.gz";
+          if pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" | gzip > "$$FILE"; then
+            echo "backup ok: $$FILE ($$(du -h "$$FILE" | cut -f1))";
+          else
+            echo "BACKUP FALHOU em $$(date -Iseconds)";
+            rm -f "$$FILE";
+          fi;
+          find /backups -name 'investhub-*.sql.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete;
+          sleep "$${BACKUP_INTERVAL_SECONDS}";
+        done
+    networks: [investhub_net]
+
   # Administração do banco — perfil "dev". Publicado só em 127.0.0.1: acesse via túnel SSH
   # (ssh -L 8080:localhost:8080 usuario@servidor), nunca exposto à internet.
   adminer:
