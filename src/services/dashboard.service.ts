@@ -10,6 +10,7 @@ import {
   lastMonthEnds,
   type LedgerEntry,
 } from "@/utils/portfolio-math";
+import { sectorBucket } from "@/utils/allocation-bucket";
 import type { AssetType } from "@prisma/client";
 import type { DashboardData, AllocationSlice } from "@/types/dashboard";
 
@@ -28,6 +29,7 @@ interface AssetMeta {
   ticker: string;
   type: AssetType;
   sector: string | null;
+  segment: string | null;
 }
 
 function monthLabel(date: Date): string {
@@ -79,7 +81,12 @@ export const dashboardService = {
     const assetMeta = new Map<string, AssetMeta>(
       transactions.map((t) => [
         t.assetId,
-        { ticker: t.asset.ticker, type: t.asset.type, sector: t.asset.sector },
+        {
+          ticker: t.asset.ticker,
+          type: t.asset.type,
+          sector: t.asset.sector,
+          segment: t.asset.segment,
+        },
       ]),
     );
     const assetIds = [...assetMeta.keys()];
@@ -111,9 +118,9 @@ export const dashboardService = {
       totalInvested += position.totalInvested;
 
       const meta = assetMeta.get(position.assetId);
-      const sector = meta?.sector ?? "Outros";
+      const bucket = meta ? sectorBucket(meta) : "Outros";
       const typeLabel = meta ? TYPE_LABELS[meta.type] : "Outros";
-      sectorTotals.set(sector, (sectorTotals.get(sector) ?? 0) + value);
+      sectorTotals.set(bucket, (sectorTotals.get(bucket) ?? 0) + value);
       typeTotals.set(typeLabel, (typeTotals.get(typeLabel) ?? 0) + value);
     }
 

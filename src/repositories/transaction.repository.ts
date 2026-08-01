@@ -17,7 +17,17 @@ export const transactionRepository = {
     return prisma.transaction.findMany({
       where: { userId },
       include: {
-        asset: { select: { id: true, ticker: true, name: true, type: true, sector: true } },
+        asset: {
+          select: {
+            id: true,
+            ticker: true,
+            name: true,
+            type: true,
+            sector: true,
+            // Segmento é o que separa um FII do outro na alocação — FII não tem setor.
+            segment: true,
+          },
+        },
       },
       orderBy: { date: "asc" },
     });

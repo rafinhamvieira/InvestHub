@@ -16,7 +16,13 @@ import { EvolutionChart } from "@/components/dashboard/evolution-chart";
 import { DividendsChart } from "@/components/dashboard/dividends-chart";
 import { AllocationDonut } from "@/components/dashboard/allocation-donut";
 import { EmptyDashboard } from "@/components/dashboard/empty-dashboard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -90,6 +96,9 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Alocação por setor</CardTitle>
+            <CardDescription>
+              Ações e BDRs pelo setor; FIIs pelo segmento do fundo.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <AllocationDonut data={data.bySector} />
