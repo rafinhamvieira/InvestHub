@@ -7,7 +7,13 @@
  * inteiras e nunca estoura o orçamento. O que não couber vira saldo restante.
  */
 
-import type { StrategyConfig, ContributionPlan, PlanItem, ClassProjection } from "@/types/contribution";
+import type {
+  StrategyConfig,
+  ContributionPlan,
+  PlanItem,
+  ClassProjection,
+  NoPurchaseReason,
+} from "@/types/contribution";
 
 export interface EngineAsset {
   assetId: string;
@@ -285,6 +291,28 @@ export function buildContributionPlan(
   const spent = amount - remaining;
   const totalAfter = totalBefore + spent;
 
+  // ---------- Diagnóstico ----------
+  // Sem isso, "nenhuma compra recomendada" não diz o que fazer a seguir — e a causa
+  // mais comum (rebalancear sem ter cadastrado metas) é justamente a mais silenciosa.
+  let reason: NoPurchaseReason | null = null;
+  if (quantities.size === 0) {
+    const hasTargets =
+      targets.byAsset.size > 0 || targets.byClass.size > 0 || targets.bySector.size > 0;
+    const usesValuation =
+      strategy.belowFair || strategy.belowCeiling || strategy.safetyMargin || strategy.dividendYield;
+    const cheapest = investable.reduce<number | null>(
+      (min, a) => (min === null || a.price < min ? a.price : min),
+      null,
+    );
+
+    if (assets.length === 0) reason = "NO_ASSETS";
+    else if (investable.length === 0) reason = "NO_PRICES";
+    else if (cheapest !== null && cheapest > amount) reason = "AMOUNT_TOO_SMALL";
+    else if (strategy.rebalance && !hasTargets && !usesValuation) reason = "NO_TARGETS";
+    else if (strategy.rebalance && hasTargets && !usesValuation) reason = "ALL_ABOVE_TARGET";
+    else reason = "NO_CRITERIA_DATA";
+  }
+
   // ---------- Itens do plano ----------
   const items: PlanItem[] = [...quantities.entries()]
     .map(([assetId, quantity]) => {
@@ -344,5 +372,6 @@ export function buildContributionPlan(
     items,
     byClassAfter,
     warnings,
+    reason,
   };
 }

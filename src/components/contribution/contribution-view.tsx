@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { extractApiError } from "@/utils/api-error";
 import { Coins, Info, Loader2, Sparkles } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/utils/format";
-import type { ContributionPlan, StrategyConfig } from "@/types/contribution";
+import type { ContributionPlan, StrategyConfig, NoPurchaseReason } from "@/types/contribution";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +50,46 @@ const STRATEGY_OPTIONS: Array<{ key: keyof StrategyConfig; label: string; descri
     description: "Priorizar maiores pagadores de proventos.",
   },
 ];
+
+/** Cada motivo de "nenhuma compra" vira uma orientação com o próximo passo. */
+const NO_PURCHASE_MESSAGES: Record<
+  NoPurchaseReason,
+  { title: string; detail: string; action?: { label: string; href: string } }
+> = {
+  NO_ASSETS: {
+    title: "Nenhum ativo para considerar",
+    detail:
+      "A recomendação parte dos ativos da sua carteira, dos favoritos e daqueles com meta definida. Cadastre ao menos um para começar.",
+    action: { label: "Ir para Minha Carteira", href: "/portfolio" },
+  },
+  NO_PRICES: {
+    title: "Sem cotação para os seus ativos",
+    detail:
+      "Sem preço não dá para calcular quantas cotas cabem no aporte. Atualize os dados de mercado no ícone ↻ no topo da tela.",
+  },
+  NO_TARGETS: {
+    title: "Defina suas metas de alocação",
+    detail:
+      "Com apenas o critério de rebalanceamento marcado, o sistema precisa saber qual carteira você quer atingir. Defina metas por classe, setor ou ativo — ou marque outros critérios, como Dividend Yield e preço justo, que funcionam sem metas.",
+    action: { label: "Definir metas de alocação", href: "/allocation" },
+  },
+  AMOUNT_TOO_SMALL: {
+    title: "Valor abaixo do menor lote",
+    detail:
+      "O valor informado não cobre nem uma cota do ativo mais barato entre os considerados. Aumente o aporte ou inclua ativos de menor valor unitário.",
+  },
+  ALL_ABOVE_TARGET: {
+    title: "Sua carteira já está nas metas",
+    detail:
+      "Todos os grupos estão na meta ou acima dela, então nenhum aporte reduz o desbalanceamento. Revise as metas ou combine outros critérios para escolher entre os ativos.",
+    action: { label: "Revisar metas", href: "/allocation" },
+  },
+  NO_CRITERIA_DATA: {
+    title: "Faltam indicadores para os critérios escolhidos",
+    detail:
+      "Os critérios marcados dependem de dados que os seus ativos ainda não têm (preço justo, margem de segurança ou Dividend Yield). Atualize os dados de mercado ou use o critério de rebalanceamento com metas definidas.",
+  },
+};
 
 function scoreTone(score: number): string {
   if (score >= 70) return "bg-success";
@@ -176,12 +217,21 @@ export function ContributionView() {
 
           {plan.items.length === 0 ? (
             <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                 <Coins className="size-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma compra recomendada — verifique se há cotações e metas cadastradas, ou se
-                  o valor cobre ao menos 1 unidade de algum ativo.
+                <p className="max-w-md text-sm font-medium">
+                  {NO_PURCHASE_MESSAGES[plan.reason ?? "NO_CRITERIA_DATA"].title}
                 </p>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  {NO_PURCHASE_MESSAGES[plan.reason ?? "NO_CRITERIA_DATA"].detail}
+                </p>
+                {NO_PURCHASE_MESSAGES[plan.reason ?? "NO_CRITERIA_DATA"].action && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={NO_PURCHASE_MESSAGES[plan.reason ?? "NO_CRITERIA_DATA"].action!.href}>
+                      {NO_PURCHASE_MESSAGES[plan.reason ?? "NO_CRITERIA_DATA"].action!.label}
+                    </Link>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : (

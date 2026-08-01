@@ -33,6 +33,21 @@ export interface ClassProjection {
   target: number | null;
 }
 
+/** Por que o motor não recomendou nenhuma compra. */
+export type NoPurchaseReason =
+  /** Nenhum ativo na carteira, watchlist ou metas. */
+  | "NO_ASSETS"
+  /** Nenhum ativo com cotação conhecida. */
+  | "NO_PRICES"
+  /** Só o rebalanceamento está ativo, mas não há metas de alocação definidas. */
+  | "NO_TARGETS"
+  /** O valor informado não cobre nem uma unidade do ativo mais barato. */
+  | "AMOUNT_TOO_SMALL"
+  /** Todos os grupos já estão na meta ou acima dela. */
+  | "ALL_ABOVE_TARGET"
+  /** Os critérios escolhidos dependem de indicadores que os ativos não têm. */
+  | "NO_CRITERIA_DATA";
+
 export interface ContributionPlan {
   amount: number;
   spent: number;
@@ -42,4 +57,6 @@ export interface ContributionPlan {
   items: PlanItem[];
   byClassAfter: ClassProjection[];
   warnings: string[];
+  /** Preenchido apenas quando `items` está vazio, para a tela poder orientar o usuário. */
+  reason: NoPurchaseReason | null;
 }

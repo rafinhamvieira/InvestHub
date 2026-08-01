@@ -197,3 +197,69 @@ describe("buildContributionPlan — valuation", () => {
     expect(plan.warnings[0]).toContain("AAAA3");
   });
 });
+
+describe("diagnóstico de nenhuma compra", () => {
+  const semMetas = targets();
+
+  it("aponta falta de metas quando só rebalanceamento está ativo", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 10, currentValue: 100 })],
+      semMetas,
+      1000,
+      REBALANCE_ONLY,
+    );
+    expect(plan.items).toHaveLength(0);
+    expect(plan.reason).toBe("NO_TARGETS");
+  });
+
+  it("aponta valor insuficiente quando o aporte não cobre uma cota", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 500 })],
+      targets({ byAsset: new Map([["A", 1]]) }),
+      100,
+      REBALANCE_ONLY,
+    );
+    expect(plan.reason).toBe("AMOUNT_TOO_SMALL");
+  });
+
+  it("aponta carteira já na meta", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 10, currentValue: 1000 })],
+      targets({ byAsset: new Map([["A", 0.1]]) }),
+      500,
+      REBALANCE_ONLY,
+    );
+    expect(plan.reason).toBe("ALL_ABOVE_TARGET");
+  });
+
+  it("aponta ausência de cotação", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 0 })],
+      targets({ byAsset: new Map([["A", 1]]) }),
+      1000,
+      REBALANCE_ONLY,
+    );
+    expect(plan.reason).toBe("NO_PRICES");
+  });
+
+  it("aponta falta de indicadores quando só critérios de valuation estão ativos", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 10 })],
+      semMetas,
+      1000,
+      { ...REBALANCE_ONLY, rebalance: false, dividendYield: true },
+    );
+    expect(plan.reason).toBe("NO_CRITERIA_DATA");
+  });
+
+  it("não reporta motivo quando houve compra", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 10 })],
+      targets({ byAsset: new Map([["A", 1]]) }),
+      100,
+      REBALANCE_ONLY,
+    );
+    expect(plan.items.length).toBeGreaterThan(0);
+    expect(plan.reason).toBeNull();
+  });
+});
