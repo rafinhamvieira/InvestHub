@@ -31,7 +31,18 @@ enum AssetType {
   FII
   ETF
   BDR
+  /// Tesouro Direto — risco soberano.
   TREASURY
+  /// Renda fixa privada: CDB, LCI, LCA, CRI, CRA, debênture.
+  FIXED_INCOME
+}
+
+/// Índice que corrige o título. PREFIXADO não tem índice: a taxa é toda no spread.
+enum FixedIncomeIndexer {
+  SELIC
+  CDI
+  IPCA
+  PREFIXADO
 }
 
 enum TransactionType {
@@ -243,6 +254,7 @@ model Asset {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  fixedIncomeTerms     FixedIncomeTerms?
   fundamentals         AssetFundamental[]
   prices               AssetPrice[]
   dividends            AssetDividend[]
@@ -319,6 +331,38 @@ model AssetPrice {
   @@unique([assetId, date])
   @@index([assetId, date])
   @@map("asset_prices")
+}
+
+/// Condições de um título de renda fixa — o que substitui "cotação de mercado" nessa classe.
+///
+/// O título não tem preço negociado em bolsa: o valor de hoje sai da correção do indexador
+/// desde a data de emissão do papel na plataforma. `startDate` é o marco dessa curva, com
+/// valor unitário 1,00; a partir dele o motor calcula um preço sintético diário, e todo o
+/// resto do sistema (posição, patrimônio, evolução, alocação) segue funcionando sem saber
+/// que aquele preço não veio da bolsa.
+model FixedIncomeTerms {
+  id      String @id @default(cuid())
+  assetId String @unique
+
+  /// Banco ou emissor. "Tesouro Nacional" para títulos públicos.
+  issuer  String?
+  indexer FixedIncomeIndexer
+
+  /// Percentual do índice — 110 significa 110% do CDI. Nulo para IPCA+ e prefixado.
+  indexPercent Decimal? @db.Decimal(8, 4)
+  /// Juro real anual somado ao índice (IPCA + 6,00) ou taxa cheia do prefixado.
+  spreadPercent Decimal? @db.Decimal(8, 4)
+
+  /// Início da curva do papel: valor unitário 1,00 nesta data.
+  startDate    DateTime
+  maturityDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("fixed_income_terms")
 }
 
 /// Proventos declarados pelo ativo (dividendo, JCP, rendimento de FII).

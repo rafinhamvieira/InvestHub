@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { TICKER_REGEX } from "@/schemas/transaction.schema";
 
-export const ASSET_CLASS_VALUES = ["STOCK", "FII", "ETF", "BDR", "TREASURY"] as const;
+export const ASSET_CLASS_VALUES = [
+  "STOCK",
+  "FII",
+  "ETF",
+  "BDR",
+  "TREASURY",
+  "FIXED_INCOME",
+] as const;
 
 export const allocationTargetSchema = z
   .object({

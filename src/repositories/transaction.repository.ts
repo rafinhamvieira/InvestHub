@@ -37,7 +37,7 @@ export const transactionRepository = {
     return prisma.transaction.findMany({
       where: { userId },
       include: {
-        asset: { select: { id: true, ticker: true, type: true } },
+        asset: { select: { id: true, ticker: true, name: true, type: true } },
         broker: { select: { name: true } },
       },
       orderBy: { date: "desc" },

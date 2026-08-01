@@ -5,5 +5,6 @@ export const ASSET_CLASS_LABELS: Record<AssetType, string> = {
   FII: "FIIs",
   ETF: "ETFs",
   BDR: "BDRs",
-  TREASURY: "Tesouro / Renda Fixa",
+  TREASURY: "Tesouro Direto",
+  FIXED_INCOME: "Renda Fixa",
 };

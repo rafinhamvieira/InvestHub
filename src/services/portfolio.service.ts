@@ -3,9 +3,21 @@ import { positionRepository } from "@/repositories/position.repository";
 import { assetRepository } from "@/repositories/asset.repository";
 import { brokerRepository } from "@/repositories/broker.repository";
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
+import { fixedIncomeRepository } from "@/repositories/fixed-income.repository";
+import { allocationTargetRepository } from "@/repositories/allocation-target.repository";
+import { fixedIncomeService } from "@/services/fixed-income.service";
 import { computePositions, quantityAt, type LedgerEntry } from "@/utils/portfolio-math";
-import type { TransactionInput } from "@/schemas/transaction.schema";
-import type { PortfolioData, PositionDTO, TransactionDTO } from "@/types/portfolio";
+import { describeRemuneration } from "@/utils/fixed-income-math";
+import { ASSET_CLASS_LABELS } from "@/constants/asset";
+import { isFixedIncomeType, type TransactionInput } from "@/schemas/transaction.schema";
+import type {
+  FixedIncomeDTO,
+  PortfolioData,
+  PortfolioGroup,
+  PositionDTO,
+  TransactionDTO,
+} from "@/types/portfolio";
+import type { AssetType } from "@prisma/client";
 
 export class PortfolioError extends Error {
   constructor(
@@ -54,19 +66,19 @@ async function recomputePosition(userId: string, assetId: string): Promise<void>
 async function assertSellIsValid(
   userId: string,
   assetId: string,
-  input: TransactionInput,
+  sale: { type: "BUY" | "SELL"; date: Date; quantity: number },
   excludeId?: string,
 ): Promise<void> {
-  if (input.type !== "SELL") return;
+  if (sale.type !== "SELL") return;
 
   const rows = await transactionRepository.findAllByUserAndAsset(userId, assetId);
   const ledger = toLedger(rows.filter((r) => r.id !== excludeId).map((r) => ({ ...r, assetId })));
-  const held = quantityAt(ledger, assetId, input.date);
+  const held = quantityAt(ledger, assetId, sale.date);
 
-  if (input.quantity > held) {
+  if (sale.quantity > held) {
     throw new PortfolioError(
       "INSUFFICIENT_QUANTITY",
-      `Quantidade em custódia na data (${held}) é menor que a quantidade vendida (${input.quantity}).`,
+      `Quantidade em custódia na data (${held}) é menor que a quantidade vendida (${sale.quantity}).`,
     );
   }
 }
@@ -78,49 +90,145 @@ async function resolveBrokerId(userId: string, brokerName?: string): Promise<str
   return broker.id;
 }
 
+/**
+ * Traduz o lançamento para o par quantidade/preço que o ledger entende.
+ *
+ * Em renda variável isso já vem digitado. Em renda fixa o usuário informa quanto aplicou:
+ * o preço é o valor unitário do título na data (1,00 na emissão, corrigido pela curva do
+ * indexador) e a quantidade é o quociente. Assim uma aplicação de R$ 5.000 num CDB que já
+ * rendeu 20% entra com a quantidade certa e continua valorizando junto com o índice.
+ */
+async function resolveAssetAndAmounts(
+  input: TransactionInput,
+): Promise<{ assetId: string; quantity: number; price: number }> {
+  if (!isFixedIncomeType(input.assetType) || !input.fixedIncome) {
+    const asset = await assetRepository.findOrCreate(input.ticker!, input.assetType);
+    return { assetId: asset.id, quantity: input.quantity!, price: input.price! };
+  }
+
+  const terms = input.fixedIncome;
+  const asset = await fixedIncomeService.registerInstrument(
+    {
+      name: terms.name,
+      assetType: input.assetType as "TREASURY" | "FIXED_INCOME",
+      issuer: terms.issuer || null,
+      indexer: terms.indexer,
+      indexPercent: terms.indexPercent ?? null,
+      spreadPercent: terms.spreadPercent ?? null,
+      maturityDate: terms.maturityDate ?? null,
+    },
+    input.date,
+  );
+
+  const unitValue = await fixedIncomeService.getUnitValue(asset.id, input.date);
+  return { assetId: asset.id, quantity: terms.amount / unitValue, price: unitValue };
+}
+
+/**
+ * Agrupa as posições por classe, com os totais que a tela mostra em cada cabeçalho.
+ *
+ * A variação do dia sai da comparação com o fechamento anterior; ativo sem cotação de
+ * ontem (renda fixa recém-lançada, papel sem negócio) fica de fora do cálculo em vez de
+ * entrar como 0% e diluir o número do grupo.
+ */
+function buildGroups(
+  positions: PositionDTO[],
+  previousMap: Map<string, number>,
+  priceMap: Map<string, number>,
+  totalValue: number,
+  targets: Array<{ level: string; label: string; targetPercent: unknown }>,
+): PortfolioGroup[] {
+  const targetByClass = new Map(
+    targets
+      .filter((target) => target.level === "CLASS")
+      .map((target) => [target.label, Number(target.targetPercent) / 100]),
+  );
+
+  const byType = new Map<AssetType, PositionDTO[]>();
+  for (const position of positions) {
+    const list = byType.get(position.assetType) ?? [];
+    list.push(position);
+    byType.set(position.assetType, list);
+  }
+
+  return [...byType.entries()]
+    .map(([assetType, groupPositions]) => {
+      const totalGroupValue = groupPositions.reduce((sum, p) => sum + p.currentValue, 0);
+      const totalGroupInvested = groupPositions.reduce((sum, p) => sum + p.totalInvested, 0);
+
+      let valueYesterday = 0;
+      let valueToday = 0;
+      for (const position of groupPositions) {
+        const previous = previousMap.get(position.assetId);
+        const current = priceMap.get(position.assetId);
+        if (previous === undefined || current === undefined || previous <= 0) continue;
+        valueYesterday += position.quantity * previous;
+        valueToday += position.quantity * current;
+      }
+
+      const profit = totalGroupValue - totalGroupInvested;
+
+      return {
+        assetType,
+        label: ASSET_CLASS_LABELS[assetType],
+        positions: groupPositions,
+        totalValue: totalGroupValue,
+        totalInvested: totalGroupInvested,
+        profit,
+        profitPercent: totalGroupInvested > 0 ? profit / totalGroupInvested : 0,
+        dayChange: valueYesterday > 0 ? valueToday / valueYesterday - 1 : null,
+        weight: totalValue > 0 ? totalGroupValue / totalValue : 0,
+        target: targetByClass.get(assetType) ?? null,
+      };
+    })
+    .sort((a, b) => b.totalValue - a.totalValue);
+}
+
 export const portfolioService = {
   async createTransaction(userId: string, input: TransactionInput): Promise<void> {
-    const asset = await assetRepository.findOrCreate(input.ticker, input.assetType);
-    await assertSellIsValid(userId, asset.id, input);
+    const { assetId, quantity, price } = await resolveAssetAndAmounts(input);
+    await assertSellIsValid(userId, assetId, { type: input.type, date: input.date, quantity });
     const brokerId = await resolveBrokerId(userId, input.brokerName);
 
     await transactionRepository.create(userId, {
-      assetId: asset.id,
+      assetId,
       brokerId,
       type: input.type,
-      quantity: input.quantity,
-      price: input.price,
+      quantity,
+      price,
       fees: input.fees,
       date: input.date,
       notes: input.notes || null,
     });
 
-    await recomputePosition(userId, asset.id);
+    await recomputePosition(userId, assetId);
+    if (isFixedIncomeType(input.assetType)) await fixedIncomeService.syncPrices();
   },
 
   async updateTransaction(userId: string, transactionId: string, input: TransactionInput): Promise<void> {
     const existing = await transactionRepository.findByIdAndUser(transactionId, userId);
     if (!existing) throw new PortfolioError("NOT_FOUND", "Transação não encontrada.");
 
-    const asset = await assetRepository.findOrCreate(input.ticker, input.assetType);
-    await assertSellIsValid(userId, asset.id, input, transactionId);
+    const { assetId, quantity, price } = await resolveAssetAndAmounts(input);
+    await assertSellIsValid(userId, assetId, { type: input.type, date: input.date, quantity }, transactionId);
     const brokerId = await resolveBrokerId(userId, input.brokerName);
 
     await transactionRepository.update(transactionId, {
-      assetId: asset.id,
+      assetId,
       brokerId,
       type: input.type,
-      quantity: input.quantity,
-      price: input.price,
+      quantity,
+      price,
       fees: input.fees,
       date: input.date,
       notes: input.notes || null,
     });
 
-    await recomputePosition(userId, asset.id);
-    if (existing.assetId !== asset.id) {
+    await recomputePosition(userId, assetId);
+    if (existing.assetId !== assetId) {
       await recomputePosition(userId, existing.assetId);
     }
+    if (isFixedIncomeType(input.assetType)) await fixedIncomeService.syncPrices();
   },
 
   async deleteTransaction(userId: string, transactionId: string): Promise<void> {
@@ -147,10 +255,39 @@ export const portfolioService = {
       ]),
     );
 
-    const latestPrices = await assetPriceRepository.findLatestByAssetIds(
-      computed.map((p) => p.assetId),
-    );
+    const assetIds = computed.map((p) => p.assetId);
+    const [latestPrices, previousPrices, fixedIncomeTerms, targets] = await Promise.all([
+      assetPriceRepository.findLatestByAssetIds(assetIds),
+      assetPriceRepository.findPreviousByAssetIds(assetIds),
+      fixedIncomeRepository.findByAssetIds([...assetMeta.keys()]),
+      allocationTargetRepository.findAllByUser(userId),
+    ]);
     const priceMap = new Map(latestPrices.map((p) => [p.assetId, Number(p.close)]));
+    const previousMap = new Map(previousPrices.map((p) => [p.assetId, Number(p.close)]));
+    const termsMap = new Map(fixedIncomeTerms.map((terms) => [terms.assetId, terms]));
+
+    const toFixedIncomeDTO = (assetId: string, name: string): FixedIncomeDTO | null => {
+      const terms = termsMap.get(assetId);
+      if (!terms) return null;
+
+      const indexPercent = terms.indexPercent === null ? null : Number(terms.indexPercent);
+      const spreadPercent = terms.spreadPercent === null ? null : Number(terms.spreadPercent);
+
+      return {
+        name,
+        issuer: terms.issuer ?? "",
+        indexer: terms.indexer,
+        indexPercent: indexPercent === null ? "" : String(indexPercent),
+        spreadPercent: spreadPercent === null ? "" : String(spreadPercent),
+        maturityDate: terms.maturityDate ? terms.maturityDate.toISOString().slice(0, 10) : "",
+        remuneration: describeRemuneration({
+          indexer: terms.indexer,
+          indexPercent,
+          spreadPercent,
+          startDate: terms.startDate,
+        }),
+      };
+    };
 
     let totalValue = 0;
     let totalInvested = 0;
@@ -177,6 +314,7 @@ export const portfolioService = {
         profit,
         profitPercent: p.totalInvested > 0 ? profit / p.totalInvested : 0,
         weight: 0, // preenchido após o total ser conhecido
+        fixedIncome: toFixedIncomeDTO(p.assetId, meta.name),
       };
     });
 
@@ -184,6 +322,8 @@ export const portfolioService = {
       position.weight = totalValue > 0 ? position.currentValue / totalValue : 0;
     }
     positions.sort((a, b) => b.currentValue - a.currentValue);
+
+    const groups = buildGroups(positions, previousMap, priceMap, totalValue, targets);
 
     const listing = await transactionRepository.findAllByUserForListing(userId);
     const transactionDTOs: TransactionDTO[] = listing.map((t) => {
@@ -193,7 +333,9 @@ export const portfolioService = {
       return {
         id: t.id,
         ticker: t.asset.ticker,
+        name: t.asset.name,
         assetType: t.asset.type,
+        fixedIncome: toFixedIncomeDTO(t.assetId, t.asset.name),
         type: t.type,
         quantity,
         price,
@@ -209,6 +351,7 @@ export const portfolioService = {
 
     return {
       positions,
+      groups,
       transactions: transactionDTOs,
       totals: {
         totalValue,

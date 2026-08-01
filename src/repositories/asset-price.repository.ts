@@ -71,6 +71,23 @@ export const assetPriceRepository = {
     });
   },
 
+  /**
+   * Penúltimo fechamento de cada ativo — base da variação do dia.
+   * Ativo com um único candle fica de fora: sem referência anterior não há variação.
+   */
+  async findPreviousByAssetIds(assetIds: string[]) {
+    if (assetIds.length === 0) return [];
+    return prisma.$queryRaw<Array<{ assetId: string; close: number }>>`
+      SELECT "assetId", close::float8 AS close
+      FROM (
+        SELECT "assetId", close, ROW_NUMBER() OVER (PARTITION BY "assetId" ORDER BY date DESC) AS rn
+        FROM asset_prices
+        WHERE "assetId" = ANY(${assetIds})
+      ) ranked
+      WHERE rn = 2
+    `;
+  },
+
   /** Série OHLC completa de um ativo (gráfico de candles). */
   findOhlcByAsset(assetId: string, since?: Date) {
     return prisma.assetPrice.findMany({

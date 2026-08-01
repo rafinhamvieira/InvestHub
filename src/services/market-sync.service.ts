@@ -7,6 +7,7 @@ import { assetFundamentalRepository } from "@/repositories/asset-fundamental.rep
 import { assetDividendRepository } from "@/repositories/asset-dividend.repository";
 import { alertService } from "@/services/alert.service";
 import { dividendSyncService } from "@/services/dividend-sync.service";
+import { fixedIncomeService } from "@/services/fixed-income.service";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -18,6 +19,8 @@ export interface SyncReport {
   dividendsUpserted: number;
   /** Proventos com pagamento hoje que viraram recibo e notificação. */
   dividendsCredited: number;
+  /** Títulos de renda fixa que tiveram o valor do dia recalculado. */
+  fixedIncomeUpdated: number;
   failedTickers: string[];
   alertsTriggered: number;
 }
@@ -233,6 +236,14 @@ export const marketSyncService = {
     report.assetsCreated += catalog.assetsCreated;
     report.fundamentalsUpdated += await this.refreshStaleFundamentals();
     report.dividendsUpserted += await dividendSyncService.syncStale(DIVIDENDS_PER_CYCLE);
+
+    // Renda fixa não tem cotação: o valor do dia sai da curva do indexador.
+    try {
+      report.fixedIncomeUpdated = await fixedIncomeService.syncPrices();
+    } catch (error) {
+      logger.error("Falha ao atualizar renda fixa", { error: (error as Error).message });
+    }
+
     return report;
   },
 
@@ -305,6 +316,7 @@ export const marketSyncService = {
       historyBackfilled: 0,
       dividendsUpserted: 0,
       dividendsCredited: 0,
+      fixedIncomeUpdated: 0,
       failedTickers: [],
       alertsTriggered: 0,
     };

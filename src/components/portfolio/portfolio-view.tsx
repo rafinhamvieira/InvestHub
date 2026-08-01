@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PositionsTable } from "@/components/portfolio/positions-table";
+import { PortfolioGroups } from "@/components/portfolio/portfolio-groups";
 import { TransactionsTable } from "@/components/portfolio/transactions-table";
 import { TransactionDialog } from "@/components/portfolio/transaction-dialog";
 import { ImportDialog } from "@/components/portfolio/import-dialog";
@@ -51,11 +52,16 @@ export function PortfolioView({ data }: { data: PortfolioData }) {
 
       <Tabs defaultValue="positions">
         <TabsList>
-          <TabsTrigger value="positions">Posições ({data.positions.length})</TabsTrigger>
+          <TabsTrigger value="positions">Meus ativos ({data.positions.length})</TabsTrigger>
+          <TabsTrigger value="list">Lista completa</TabsTrigger>
           <TabsTrigger value="transactions">Transações ({data.transactions.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="positions">
+          <PortfolioGroups groups={data.groups} />
+        </TabsContent>
+
+        <TabsContent value="list">
           <Card>
             <CardContent className="p-0">
               <PositionsTable positions={data.positions} />

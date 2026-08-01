@@ -27,6 +27,7 @@ export function sectorBucket(asset: BucketAsset): string | null {
       return asset.segment?.trim() || "FIIs sem segmento";
     case "ETF":
     case "TREASURY":
+    case "FIXED_INCOME":
       return null;
     default:
       return asset.sector?.trim() || "Outros";

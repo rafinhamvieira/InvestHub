@@ -22,7 +22,8 @@ const TYPE_LABELS: Record<AssetType, string> = {
   FII: "FIIs",
   ETF: "ETFs",
   BDR: "BDRs",
-  TREASURY: "Tesouro",
+  TREASURY: "Tesouro Direto",
+  FIXED_INCOME: "Renda Fixa",
 };
 
 interface AssetMeta {

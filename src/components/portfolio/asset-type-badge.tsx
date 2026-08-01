@@ -7,6 +7,7 @@ const TYPE_CONFIG: Record<AssetType, { label: string }> = {
   ETF: { label: "ETF" },
   BDR: { label: "BDR" },
   TREASURY: { label: "Tesouro" },
+  FIXED_INCOME: { label: "Renda Fixa" },
 };
 
 export function AssetTypeBadge({ type }: { type: AssetType }) {
