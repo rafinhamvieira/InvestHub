@@ -59,6 +59,8 @@ export interface AdminUserRow {
   lockedUntil: string | null;
   failedLoginAttempts: number;
   lastLoginAt: string | null;
+  /** Horas restantes para confirmar o e-mail antes da remoção automática; null quando já confirmou. */
+  expiresInHours: number | null;
   createdAt: string;
 }
 

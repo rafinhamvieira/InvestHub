@@ -19,6 +19,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("SEND_PASSWORD_RESET") }),
   z.object({ action: z.literal("RESET_TWO_FACTOR") }),
   z.object({ action: z.literal("UNLOCK") }),
+  z.object({ action: z.literal("GRANT_ADMIN") }),
+  z.object({ action: z.literal("REVOKE_ADMIN") }),
 ]);
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -67,6 +69,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         break;
       case "UNLOCK":
         await adminUserService.unlock(ctx, id);
+        break;
+      case "GRANT_ADMIN":
+        await adminUserService.setRole(ctx, id, "ADMIN");
+        break;
+      case "REVOKE_ADMIN":
+        await adminUserService.setRole(ctx, id, "USER");
         break;
     }
 

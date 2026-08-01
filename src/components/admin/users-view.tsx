@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { KeyRound, Loader2, LockOpen, Mail, Search, ShieldOff, UserPen } from "lucide-react";
+import {
+  KeyRound,
+  Loader2,
+  LockOpen,
+  Mail,
+  Search,
+  ShieldMinus,
+  ShieldOff,
+  ShieldPlus,
+  UserPen,
+} from "lucide-react";
 import { extractApiError } from "@/utils/api-error";
 import type { AdminUserPage, AdminUserRow } from "@/types/audit";
 import { Button } from "@/components/ui/button";
@@ -28,7 +38,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type Action = "RENAME" | "CHANGE_EMAIL" | "SEND_PASSWORD_RESET" | "RESET_TWO_FACTOR" | "UNLOCK";
+type Action =
+  | "RENAME"
+  | "CHANGE_EMAIL"
+  | "SEND_PASSWORD_RESET"
+  | "RESET_TWO_FACTOR"
+  | "UNLOCK"
+  | "GRANT_ADMIN"
+  | "REVOKE_ADMIN";
 
 interface PendingAction {
   user: AdminUserRow;
@@ -64,9 +81,26 @@ const ACTION_COPY: Record<Action, { title: string; description: string; confirm:
     description: "Zera as tentativas falhas e libera o acesso imediatamente.",
     confirm: "Desbloquear",
   },
+  GRANT_ADMIN: {
+    title: "Conceder permissão de administrador",
+    description:
+      "O usuário passa a ver a auditoria de toda a plataforma, a lista de usuários e o backup do banco. Continua sem acesso à carteira de ninguém. Vale a partir do próximo login dele.",
+    confirm: "Conceder acesso",
+  },
+  REVOKE_ADMIN: {
+    title: "Remover permissão de administrador",
+    description: "O usuário perde o acesso ao painel imediatamente.",
+    confirm: "Remover acesso",
+  },
 };
 
-export function UsersView({ initial }: { initial: AdminUserPage }) {
+export function UsersView({
+  initial,
+  currentAdminId,
+}: {
+  initial: AdminUserPage;
+  currentAdminId: string;
+}) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const [search, setSearch] = useState("");
@@ -174,7 +208,13 @@ export function UsersView({ initial }: { initial: AdminUserPage }) {
                   </TableCell>
                   <TableCell className="space-x-1">
                     {user.role === "ADMIN" && <Badge variant="warning">admin</Badge>}
-                    {!user.emailVerified && <Badge variant="secondary">e-mail não confirmado</Badge>}
+                    {!user.emailVerified && (
+                      <Badge variant="secondary">
+                        {user.expiresInHours === null
+                          ? "e-mail não confirmado"
+                          : `expira em ${user.expiresInHours}h`}
+                      </Badge>
+                    )}
                     {user.twoFactorEnabled && <Badge variant="success">2FA</Badge>}
                     {user.lockedUntil && <Badge variant="destructive">bloqueada</Badge>}
                   </TableCell>
@@ -200,6 +240,32 @@ export function UsersView({ initial }: { initial: AdminUserPage }) {
                     <Button variant="ghost" size="sm" title="Desbloquear conta" disabled={!user.lockedUntil} onClick={() => openAction(user, "UNLOCK")}>
                       <LockOpen className="size-4" />
                     </Button>
+                    {user.role === "ADMIN" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        // O próprio admin não pode se rebaixar: sem isso, o único
+                        // administrador se tranca para fora do painel sem volta.
+                        disabled={user.id === currentAdminId}
+                        title={
+                          user.id === currentAdminId
+                            ? "Você não pode remover a sua própria permissão"
+                            : "Remover permissão de administrador"
+                        }
+                        onClick={() => openAction(user, "REVOKE_ADMIN")}
+                      >
+                        <ShieldMinus className="size-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Conceder permissão de administrador"
+                        onClick={() => openAction(user, "GRANT_ADMIN")}
+                      >
+                        <ShieldPlus className="size-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

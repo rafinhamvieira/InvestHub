@@ -9,6 +9,7 @@ import { alertService } from "@/services/alert.service";
 import { dividendSyncService } from "@/services/dividend-sync.service";
 import { fixedIncomeService } from "@/services/fixed-income.service";
 import { syncHealthService } from "@/services/sync-health.service";
+import { accountCleanupService } from "@/services/account-cleanup.service";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -257,6 +258,15 @@ export const marketSyncService = {
       await fixedIncomeService.notifyMaturities();
     } catch (error) {
       logger.error("Falha ao atualizar renda fixa", { error: (error as Error).message });
+    }
+
+    // Cadastros que não confirmaram o e-mail no prazo saem da base.
+    try {
+      await accountCleanupService.removeUnverified();
+    } catch (error) {
+      logger.error("Falha ao remover cadastros não confirmados", {
+        error: (error as Error).message,
+      });
     }
 
     return report;

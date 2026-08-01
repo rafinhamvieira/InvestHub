@@ -39,6 +39,22 @@ interface ActionContext {
 
 const MAX_PAGE_SIZE = 100;
 
+/**
+ * Quanto falta para o cadastro não confirmado ser removido automaticamente.
+ * Mostrar o prazo evita a surpresa de ver uma conta sumir da lista sem explicação.
+ */
+function hoursUntilRemoval(user: {
+  emailVerified: Date | null;
+  role: string;
+  createdAt: Date;
+}): number | null {
+  if (user.emailVerified !== null || user.role === "ADMIN") return null;
+
+  const ttlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
+  const elapsed = (Date.now() - user.createdAt.getTime()) / (60 * 60 * 1000);
+  return Math.max(0, Math.ceil(ttlHours - elapsed));
+}
+
 async function loadTarget(userId: string) {
   const user = await userRepository.findById(userId);
   if (!user) throw new AdminActionError("NOT_FOUND", "Usuário não encontrado.");
@@ -94,6 +110,7 @@ export const adminUserService = {
       lockedUntil: row.lockedUntil && row.lockedUntil > new Date() ? row.lockedUntil.toISOString() : null,
       failedLoginAttempts: row.failedLoginAttempts,
       lastLoginAt: lastLogins.get(row.id)?.toISOString() ?? null,
+      expiresInHours: hoursUntilRemoval(row),
       createdAt: row.createdAt.toISOString(),
     }));
 
@@ -215,6 +232,37 @@ export const adminUserService = {
       "Autenticação em duas etapas removida",
       "Um administrador removeu o 2FA da sua conta. Configure novamente em Configurações → Segurança " +
         "para voltar a proteger o acesso.",
+    );
+  },
+
+  /**
+   * Concede ou remove permissão de administrador.
+   *
+   * Vale só no próximo login de quem foi alterado: o papel viaja no token da sessão. Quem
+   * acabou de ser rebaixado ainda passa pelo middleware até o token expirar — mas esbarra
+   * no `requireAdmin()`, que confere o papel no banco a cada requisição.
+   */
+  async setRole(ctx: ActionContext, userId: string, role: "USER" | "ADMIN"): Promise<void> {
+    const action = role === "ADMIN" ? "GRANT_ADMIN" : "REVOKE_ADMIN";
+    const target = await authorize(action, ctx, userId);
+
+    await userRepository.setRole(userId, role);
+    await auditLogRepository.record({
+      userId: ctx.adminId,
+      action: role === "ADMIN" ? AUDIT_ACTIONS.ADMIN_ROLE_GRANTED : AUDIT_ACTIONS.ADMIN_ROLE_REVOKED,
+      entity: "User",
+      entityId: userId,
+      metadata: { from: target.role, to: role },
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
+    });
+
+    await notifyUser(
+      target.email,
+      role === "ADMIN" ? "Permissão de administrador concedida" : "Permissão de administrador removida",
+      role === "ADMIN"
+        ? "Sua conta agora tem acesso ao painel de administração. O acesso vale a partir do próximo login."
+        : "Sua conta não tem mais acesso ao painel de administração.",
     );
   },
 

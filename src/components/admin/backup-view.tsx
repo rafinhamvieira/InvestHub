@@ -8,6 +8,16 @@ import { formatBytes } from "@/utils/format";
 import type { BackupFile } from "@/types/admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -20,6 +30,46 @@ import {
 export function BackupView({ initial }: { initial: BackupFile[] }) {
   const [files, setFiles] = useState(initial);
   const [isCreating, setIsCreating] = useState(false);
+  const [downloading, setDownloading] = useState<BackupFile | null>(null);
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  async function download() {
+    if (!downloading) return;
+
+    if (password !== confirmation) {
+      toast.error("As senhas não conferem.");
+      return;
+    }
+
+    setIsDownloading(true);
+    const response = await fetch(`/api/admin/backup/${encodeURIComponent(downloading.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+
+    if (!response.ok) {
+      setIsDownloading(false);
+      toast.error(await extractApiError(response, "Não foi possível baixar o backup."));
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${downloading.name}.enc`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    setIsDownloading(false);
+    setDownloading(null);
+    setPassword("");
+    setConfirmation("");
+    toast.success("Backup baixado. Guarde a senha: sem ela o arquivo é irrecuperável.");
+  }
 
   async function refresh() {
     const response = await fetch("/api/admin/backup");
@@ -64,9 +114,10 @@ export function BackupView({ initial }: { initial: BackupFile[] }) {
           <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" />
           <p className="text-sm text-muted-foreground">
             O arquivo contém os dados de <strong>todos</strong> os usuários, inclusive os que
-            este painel não exibe. Cada geração e cada download ficam registrados na
-            auditoria com autor, IP e horário. Guarde o arquivo em local seguro e apague-o
-            quando não precisar mais.
+            este painel não exibe. Por isso o download sai sempre cifrado com uma senha que
+            você define na hora — ela não é guardada em lugar nenhum, e sem ela o arquivo é
+            irrecuperável. Cada geração e cada download ficam registrados na auditoria com
+            autor, IP e horário.
           </p>
         </CardContent>
       </Card>
@@ -101,11 +152,9 @@ export function BackupView({ initial }: { initial: BackupFile[] }) {
                       {formatBytes(file.sizeBytes)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <a href={`/api/admin/backup/${encodeURIComponent(file.name)}`} download>
-                          <Download className="size-4" />
-                          Baixar
-                        </a>
+                      <Button variant="outline" size="sm" onClick={() => setDownloading(file)}>
+                        <Download className="size-4" />
+                        Baixar
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -115,6 +164,68 @@ export function BackupView({ initial }: { initial: BackupFile[] }) {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={downloading !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDownloading(null);
+            setPassword("");
+            setConfirmation("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Senha do arquivo</DialogTitle>
+            <DialogDescription>
+              O backup será cifrado com esta senha antes de sair do servidor. Guarde-a: não
+              existe recuperação — nem por nós, nem por você.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="backup-password">Senha (mínimo 12 caracteres)</Label>
+              <Input
+                id="backup-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="backup-confirmation">Repita a senha</Label>
+              <Input
+                id="backup-confirmation"
+                type="password"
+                autoComplete="new-password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Para abrir depois:{" "}
+              <code className="rounded bg-muted px-1">
+                npx tsx scripts/decrypt-backup.ts arquivo.sql.gz.enc &quot;senha&quot;
+              </code>
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDownloading(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={download} disabled={isDownloading || password.length < 12}>
+              {isDownloading && <Loader2 className="animate-spin" />}
+              Baixar cifrado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

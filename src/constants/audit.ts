@@ -38,6 +38,8 @@ export const AUDIT_ACTIONS = {
   /** Tentativa de acessar área administrativa sem permissão — sinal de sondagem. */
   ADMIN_ACCESS_DENIED: "ADMIN_ACCESS_DENIED",
   ADMIN_ROLE_GRANTED: "ADMIN_ROLE_GRANTED",
+  /** Cadastro removido por não confirmar o e-mail no prazo. */
+  ACCOUNT_REMOVED_UNVERIFIED: "ACCOUNT_REMOVED_UNVERIFIED",
   ADMIN_ROLE_REVOKED: "ADMIN_ROLE_REVOKED",
 } as const;
 
@@ -64,6 +66,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   ADMIN_BACKUP_CREATED: "Backup gerado",
   ADMIN_ACCESS_DENIED: "Acesso administrativo negado",
   ADMIN_ROLE_GRANTED: "Permissão de administrador concedida",
+  ACCOUNT_REMOVED_UNVERIFIED: "Cadastro removido por falta de confirmação",
   ADMIN_ROLE_REVOKED: "Permissão de administrador removida",
 };
 

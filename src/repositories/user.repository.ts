@@ -63,6 +63,10 @@ export const userRepository = {
     });
   },
 
+  setRole(userId: string, role: "USER" | "ADMIN"): Promise<User> {
+    return prisma.user.update({ where: { id: userId }, data: { role } });
+  },
+
   unlock(userId: string): Promise<User> {
     return prisma.user.update({
       where: { id: userId },

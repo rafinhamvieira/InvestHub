@@ -44,6 +44,50 @@ describe("quem pode agir sobre quem", () => {
   it("tem mensagem para cada motivo de recusa", () => {
     expect(POLICY_MESSAGES.ADMIN_TARGET).toBeTruthy();
     expect(POLICY_MESSAGES.SELF_TARGET).toBeTruthy();
+    expect(POLICY_MESSAGES.SELF_DEMOTION).toBeTruthy();
+    expect(POLICY_MESSAGES.ALREADY_APPLIED).toBeTruthy();
+  });
+});
+
+describe("permissão de administrador", () => {
+  const eu = "admin1";
+
+  it("concede a usuário comum", () => {
+    expect(canPerform("GRANT_ADMIN", { actorId: eu, targetId: "u1", targetRole: "USER" }).allowed).toBe(
+      true,
+    );
+  });
+
+  it("remove de outro administrador", () => {
+    // Corrigir permissão dada por engano precisa ser possível.
+    const result = canPerform("REVOKE_ADMIN", {
+      actorId: eu,
+      targetId: "admin2",
+      targetRole: "ADMIN",
+    });
+    expect(result.allowed).toBe(true);
+  });
+
+  it("nunca deixa o administrador remover a própria permissão", () => {
+    const result = canPerform("REVOKE_ADMIN", { actorId: eu, targetId: eu, targetRole: "ADMIN" });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("SELF_DEMOTION");
+  });
+
+  it("recusa conceder a quem já é administrador e remover de quem não é", () => {
+    expect(
+      canPerform("GRANT_ADMIN", { actorId: eu, targetId: "admin2", targetRole: "ADMIN" }).reason,
+    ).toBe("ALREADY_APPLIED");
+    expect(
+      canPerform("REVOKE_ADMIN", { actorId: eu, targetId: "u1", targetRole: "USER" }).reason,
+    ).toBe("ALREADY_APPLIED");
+  });
+
+  it("continua bloqueando os dados de outro administrador", () => {
+    // Mexer no papel é permitido; mexer no e-mail e no 2FA de um par, não.
+    const alvo = { actorId: eu, targetId: "admin2", targetRole: "ADMIN" as const };
+    expect(canPerform("CHANGE_EMAIL", alvo).reason).toBe("ADMIN_TARGET");
+    expect(canPerform("RESET_TWO_FACTOR", alvo).reason).toBe("ADMIN_TARGET");
   });
 });
 

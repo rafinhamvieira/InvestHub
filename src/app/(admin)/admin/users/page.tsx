@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireAdmin } from "@/lib/admin-guard";
 import { adminUserService } from "@/services/admin-user.service";
 import { UsersView } from "@/components/admin/users-view";
 
@@ -9,7 +10,12 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Usuários" };
 
 export default async function AdminUsersPage() {
-  const initial = await adminUserService.list({ page: 1, pageSize: 50 });
+  // O layout já barrou quem não é administrador; aqui só precisamos de quem é, para a tela
+  // saber qual linha é a do próprio usuário e desabilitar o autorrebaixamento.
+  const [admin, initial] = await Promise.all([
+    requireAdmin(),
+    adminUserService.list({ page: 1, pageSize: 50 }),
+  ]);
 
-  return <UsersView initial={initial} />;
+  return <UsersView initial={initial} currentAdminId={admin.id} />;
 }

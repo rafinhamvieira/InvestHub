@@ -11,7 +11,12 @@ export type AdminAction =
   | "CHANGE_EMAIL"
   | "SEND_PASSWORD_RESET"
   | "RESET_TWO_FACTOR"
-  | "UNLOCK";
+  | "UNLOCK"
+  | "GRANT_ADMIN"
+  | "REVOKE_ADMIN";
+
+/** Ações que mexem no papel, e não nos dados da conta. */
+const ROLE_ACTIONS: AdminAction[] = ["GRANT_ADMIN", "REVOKE_ADMIN"];
 
 export interface ActorTarget {
   actorId: string;
@@ -22,7 +27,7 @@ export interface ActorTarget {
 export interface PolicyResult {
   allowed: boolean;
   /** Código estável para a API responder e para a tela explicar a recusa. */
-  reason?: "SELF_TARGET" | "ADMIN_TARGET";
+  reason?: "SELF_TARGET" | "ADMIN_TARGET" | "SELF_DEMOTION" | "ALREADY_APPLIED";
 }
 
 /**
@@ -41,9 +46,31 @@ export interface PolicyResult {
  */
 export function canPerform(action: AdminAction, context: ActorTarget): PolicyResult {
   const isSelf = context.actorId === context.targetId;
+  const isRoleAction = ROLE_ACTIONS.includes(action);
 
-  if (!isSelf && context.targetRole === "ADMIN") {
+  // Ninguém se rebaixa. Sem esta regra, o único administrador tira a própria permissão por
+  // engano e a plataforma fica sem quem administre — sem caminho de volta pela interface.
+  if (isSelf && action === "REVOKE_ADMIN") {
+    return { allowed: false, reason: "SELF_DEMOTION" };
+  }
+
+  if (isSelf && action === "GRANT_ADMIN") {
+    return { allowed: false, reason: "ALREADY_APPLIED" };
+  }
+
+  // Conta de outro administrador é intocável **nos dados** — trocar e-mail ou zerar 2FA de
+  // um par seria tomar o painel de quem também administra. Rebaixar continua permitido: é
+  // como se corrige uma permissão dada por engano.
+  if (!isSelf && context.targetRole === "ADMIN" && !isRoleAction) {
     return { allowed: false, reason: "ADMIN_TARGET" };
+  }
+
+  if (action === "GRANT_ADMIN" && context.targetRole === "ADMIN") {
+    return { allowed: false, reason: "ALREADY_APPLIED" };
+  }
+
+  if (action === "REVOKE_ADMIN" && context.targetRole !== "ADMIN") {
+    return { allowed: false, reason: "ALREADY_APPLIED" };
   }
 
   if (isSelf && (action === "CHANGE_EMAIL" || action === "RESET_TWO_FACTOR")) {
@@ -56,4 +83,6 @@ export function canPerform(action: AdminAction, context: ActorTarget): PolicyRes
 export const POLICY_MESSAGES: Record<NonNullable<PolicyResult["reason"]>, string> = {
   ADMIN_TARGET: "Contas de administrador não podem ser alteradas por outro administrador.",
   SELF_TARGET: "Use as configurações da sua própria conta para esta alteração.",
+  SELF_DEMOTION: "Você não pode remover a sua própria permissão de administrador.",
+  ALREADY_APPLIED: "A conta já está nesta situação.",
 };
