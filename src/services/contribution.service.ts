@@ -2,13 +2,83 @@ import { allocationTargetRepository } from "@/repositories/allocation-target.rep
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { assetFundamentalRepository } from "@/repositories/asset-fundamental.repository";
 import { watchlistRepository } from "@/repositories/watchlist.repository";
+import { screenerRepository } from "@/repositories/screener.repository";
 import { portfolioService } from "@/services/portfolio.service";
+import { scoreService } from "@/services/score.service";
 import { buildContributionPlan, type EngineAsset, type TargetSet } from "@/utils/contribution-engine";
 import { grahamFairPrice, bazinCeilingPrice, lpaFromPl, vpaFromPvp } from "@/utils/valuation-math";
 import { ASSET_CLASS_LABELS } from "@/constants/asset";
 import type { ContributionRequest } from "@/schemas/allocation.schema";
 import type { ContributionPlan } from "@/types/contribution";
 import type { AssetType } from "@prisma/client";
+
+interface UniverseAsset {
+  assetId: string;
+  ticker: string;
+  name: string;
+  type: AssetType;
+  sector: string | null;
+  price: number;
+  currentValue: number;
+}
+
+/**
+ * Melhores ativos de cada classe que ainda não estão na carteira do usuário.
+ *
+ * O corte por nota evita o efeito colateral óbvio de abrir o universo: sem ele, a meta da
+ * classe se dividiria entre todos os papéis do mercado e o plano viraria uma cota de cada
+ * coisa. Ativos sem dados suficientes para uma nota ficam de fora — recomendar às cegas é
+ * pior do que não recomendar.
+ */
+async function suggestNewAssets(
+  userId: string,
+  classes: AssetType[],
+  alreadyIn: Set<string>,
+  perClass: number,
+): Promise<UniverseAsset[]> {
+  if (classes.length === 0) return [];
+
+  const candidates = (await screenerRepository.findAssetsByTypes(classes)).filter(
+    (asset) => !alreadyIn.has(asset.id),
+  );
+  if (candidates.length === 0) return [];
+
+  const candidateIds = candidates.map((asset) => asset.id);
+  const [scores, prices] = await Promise.all([
+    scoreService.scoreAssets(userId, candidateIds),
+    assetPriceRepository.findLatestByAssetIds(candidateIds),
+  ]);
+  const priceMap = new Map(prices.map((price) => [price.assetId, Number(price.close)]));
+
+  const byClass = new Map<AssetType, Array<{ asset: (typeof candidates)[number]; score: number }>>();
+  for (const asset of candidates) {
+    const score = scores.get(asset.id)?.score;
+    const price = priceMap.get(asset.id) ?? 0;
+    if (score === null || score === undefined || price <= 0) continue;
+
+    const list = byClass.get(asset.type) ?? [];
+    list.push({ asset, score });
+    byClass.set(asset.type, list);
+  }
+
+  const chosen: UniverseAsset[] = [];
+  for (const list of byClass.values()) {
+    list.sort((a, b) => b.score - a.score);
+    for (const { asset } of list.slice(0, perClass)) {
+      chosen.push({
+        assetId: asset.id,
+        ticker: asset.ticker,
+        name: asset.name,
+        type: asset.type,
+        sector: asset.sector,
+        price: priceMap.get(asset.id) ?? 0,
+        currentValue: 0,
+      });
+    }
+  }
+
+  return chosen;
+}
 
 export const contributionService = {
   async buildPlan(userId: string, request: ContributionRequest): Promise<ContributionPlan> {
@@ -72,6 +142,33 @@ export const contributionService = {
         price: 0, // resolvido abaixo pela última cotação
         currentValue: 0,
       });
+    }
+
+    // Sugestões: ativos que o usuário ainda não tem entram pelas melhores notas, dentro
+    // das classes que ele já usa (carteira ou metas). Sem esse recorte, uma meta de FII
+    // seria dividida entre centenas de fundos e cada um receberia migalhas.
+    if (request.suggestionsPerClass > 0) {
+      const classes = new Set<AssetType>([
+        ...portfolio.positions.map((position) => position.assetType),
+        ...targets.flatMap((target) =>
+          target.level === "CLASS"
+            ? [target.label as AssetType]
+            : target.asset
+              ? [target.asset.type]
+              : [],
+        ),
+      ]);
+
+      const suggestions = await suggestNewAssets(
+        userId,
+        [...classes],
+        new Set(universe.keys()),
+        request.suggestionsPerClass,
+      );
+
+      for (const suggestion of suggestions) {
+        universe.set(suggestion.assetId, suggestion);
+      }
     }
 
     const assetIds = [...universe.keys()];

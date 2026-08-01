@@ -15,6 +15,27 @@ export const assetPriceRepository = {
     });
   },
 
+  /**
+   * Grava o fechamento do dia de vários ativos numa tacada.
+   *
+   * O catálogo traz o mercado inteiro numa requisição; escrever ativo a ativo seriam
+   * ~2000 idas ao banco por ciclo. Dias já gravados são ignorados — quem precisa de preço
+   * intradiário atualizado continua passando por `upsertDaily`.
+   */
+  createManyDaily(entries: Array<{ assetId: string; close: number; volume?: number | null }>, date: Date) {
+    if (entries.length === 0) return Promise.resolve({ count: 0 });
+    const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    return prisma.assetPrice.createMany({
+      data: entries.map((entry) => ({
+        assetId: entry.assetId,
+        date: day,
+        close: entry.close,
+        volume: entry.volume ?? null,
+      })),
+      skipDuplicates: true,
+    });
+  },
+
   /** Insere histórico em lote ignorando dias já existentes. */
   createManyHistory(
     assetId: string,

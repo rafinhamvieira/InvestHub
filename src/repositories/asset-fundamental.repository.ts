@@ -26,6 +26,41 @@ export const assetFundamentalRepository = {
     });
   },
 
+  /**
+   * Cria em lote os snapshots do dia vindos do catálogo (preço, valor de mercado,
+   * liquidez). Registros já existentes na data são preservados — eles vêm da fonte de
+   * fundamentos e são mais completos do que o catálogo.
+   */
+  createManySnapshots(
+    entries: Array<{
+      assetId: string;
+      price: number | null;
+      marketCap: number | null;
+      liquidity: number | null;
+    }>,
+    referenceDate: Date,
+  ) {
+    if (entries.length === 0) return Promise.resolve({ count: 0 });
+    const day = new Date(
+      Date.UTC(
+        referenceDate.getUTCFullYear(),
+        referenceDate.getUTCMonth(),
+        referenceDate.getUTCDate(),
+      ),
+    );
+
+    return prisma.assetFundamental.createMany({
+      data: entries.map((entry) => ({
+        assetId: entry.assetId,
+        referenceDate: day,
+        price: entry.price,
+        marketCap: entry.marketCap,
+        liquidity: entry.liquidity,
+      })),
+      skipDuplicates: true,
+    });
+  },
+
   /** Série histórica completa de indicadores de um ativo (gráficos de histórico). */
   findHistoryByAsset(assetId: string) {
     return prisma.assetFundamental.findMany({

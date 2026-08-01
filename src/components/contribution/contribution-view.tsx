@@ -115,6 +115,7 @@ export function ContributionView() {
   });
   const [maxPerAsset, setMaxPerAsset] = useState("100");
   const [includeWatchlist, setIncludeWatchlist] = useState(false);
+  const [suggestionsPerClass, setSuggestionsPerClass] = useState("0");
   const [plan, setPlan] = useState<ContributionPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -132,6 +133,7 @@ export function ContributionView() {
         strategy,
         maxPerAsset: Number(maxPerAsset),
         includeWatchlist,
+        suggestionsPerClass: Number(suggestionsPerClass),
       }),
     });
 
@@ -191,6 +193,21 @@ export function ContributionView() {
               </Select>
             </div>
 
+            <div className="w-56 space-y-2">
+              <Label htmlFor="suggestions">Sugerir ativos novos</Label>
+              <Select value={suggestionsPerClass} onValueChange={setSuggestionsPerClass}>
+                <SelectTrigger id="suggestions">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Só o que já tenho</SelectItem>
+                  <SelectItem value="3">Até 3 por classe</SelectItem>
+                  <SelectItem value="5">Até 5 por classe</SelectItem>
+                  <SelectItem value="10">Até 10 por classe</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <Button onClick={generatePlan} disabled={isLoading || !amount || !anyEnabled}>
               {isLoading ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Recomendar
@@ -214,7 +231,8 @@ export function ContributionView() {
           <p className="text-xs text-muted-foreground">
             O aporte é repartido entre todos os ativos abaixo da meta, na proporção do que
             falta em cada um — nunca além da própria meta. O limite por ativo é só uma trava
-            de segurança para estratégias sem rebalanceamento.
+            de segurança para estratégias sem rebalanceamento. As sugestões trazem os ativos
+            de melhor nota que você ainda não tem, dentro das classes que já usa.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -308,6 +326,11 @@ export function ContributionView() {
                       <TableRow key={item.assetId}>
                         <TableCell>
                           <span className="font-medium">{item.ticker}</span>
+                          {item.weightBefore === 0 && (
+                            <Badge variant="secondary" className="ml-2">
+                              novo
+                            </Badge>
+                          )}
                           <ul className="mt-1 max-w-md space-y-0.5">
                             {item.reasons.map((reason) => (
                               <li

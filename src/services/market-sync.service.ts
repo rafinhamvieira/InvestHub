@@ -30,6 +30,14 @@ interface SyncTarget {
   type: AssetType;
 }
 
+/**
+ * Quantos ativos têm os fundamentos atualizados por ciclo.
+ *
+ * Com o padrão de 30 min entre ciclos, 4 por rodada dão ~192 requisições/dia — logo abaixo
+ * das 200 do plano gratuito do provedor de fundamentos. Aumente junto com o plano.
+ */
+const FUNDAMENTALS_PER_CYCLE = Number(process.env.FUNDAMENTALS_PER_CYCLE ?? 4);
+
 /** Backfill de histórico quando o ativo tem menos de 2 candles nos últimos 7 dias. */
 const HISTORY_STALE_DAYS = 7;
 const HISTORY_MIN_RECENT = 2;
@@ -41,11 +49,207 @@ function compact<T extends Record<string, unknown>>(data: T): Partial<T> {
   ) as Partial<T>;
 }
 
+/**
+ * Busca e grava os fundamentos de um ativo. Devolve se algo foi gravado.
+ * Compartilhado pelo sync normal e pela rotação que cobre o resto do mercado.
+ */
+async function fetchAndStoreFundamentals(asset: {
+  id: string;
+  ticker: string;
+  type: AssetType;
+}): Promise<boolean> {
+  const provider = getFundamentalsProvider();
+  if (!provider) return false;
+
+  try {
+    const data = await provider.getFundamentals(asset.ticker, asset.type === "FII");
+    if (!data) return false;
+
+    await assetFundamentalRepository.upsertSnapshot(
+      asset.id,
+      new Date(),
+      compact({
+        pl: data.pl,
+        pvp: data.pvp,
+        dividendYield: data.dividendYield,
+        roe: data.roe,
+        roic: data.roic,
+        netMargin: data.netMargin,
+        ebitdaMargin: data.ebitdaMargin,
+        evEbit: data.evEbit,
+        evEbitda: data.evEbitda,
+        netDebt: data.netDebt,
+        netDebtEbitda: data.netDebtEbitda,
+        equity: data.equity,
+        marketCap: data.marketCap,
+        revenueGrowth: data.revenueGrowth,
+        earningsGrowth: data.earningsGrowth,
+        vacancy: data.vacancy,
+        numberOfProperties: data.numberOfProperties,
+        numberOfShareholders: data.numberOfShareholders,
+        managerName: data.managerName,
+      }),
+    );
+
+    // O segmento do FII vive no cadastro do ativo, não no snapshot.
+    if (data.segment) {
+      await prisma.asset.update({ where: { id: asset.id }, data: { segment: data.segment } });
+    }
+
+    return true;
+  } catch (error) {
+    logger.warn("Falha ao sincronizar fundamentos", {
+      ticker: asset.ticker,
+      error: (error as Error).message,
+    });
+    return false;
+  }
+}
+
 export const marketSyncService = {
+  /**
+   * Espelha o catálogo do mercado no banco: cria os tickers que faltam e grava o
+   * fechamento do dia de todos eles.
+   *
+   * É o que faz o screener varrer o mercado em vez da carteira do usuário. Tudo em
+   * poucas queries — uma requisição ao provedor, um `createMany` de ativos, um de preços
+   * e um de snapshots — porque são ~2000 ativos por ciclo.
+   */
+  async syncCatalog(): Promise<{ assetsCreated: number; pricesWritten: number }> {
+    const market = getMarketDataProvider();
+    const catalog = await market.listAll();
+    if (catalog.length === 0) return { assetsCreated: 0, pricesWritten: 0 };
+
+    const { count: assetsCreated } = await assetRepository.createManyFromCatalog(
+      catalog.map((item) => ({
+        ticker: item.ticker,
+        name: item.name,
+        type: item.assetType as AssetType,
+        sector: item.sector,
+        subsector: item.subsector,
+      })),
+    );
+
+    const assets = await assetRepository.listByTickers(catalog.map((item) => item.ticker));
+    const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
+    const now = new Date();
+
+    const { count: pricesWritten } = await assetPriceRepository.createManyDaily(
+      catalog.flatMap((item) => {
+        const asset = assetByTicker.get(item.ticker);
+        return asset ? [{ assetId: asset.id, close: item.price, volume: item.volume }] : [];
+      }),
+      now,
+    );
+
+    // Preço, valor de mercado e liquidez já vêm no catálogo: gravar aqui dá ao screener
+    // as três colunas de graça, enquanto o resto dos indicadores espera a rotação.
+    await assetFundamentalRepository.createManySnapshots(
+      catalog.flatMap((item) => {
+        const asset = assetByTicker.get(item.ticker);
+        return asset
+          ? [
+              {
+                assetId: asset.id,
+                price: item.price,
+                marketCap: item.marketCap,
+                liquidity: item.volume,
+              },
+            ]
+          : [];
+      }),
+      now,
+    );
+
+    // Cadastro incompleto (ativo criado antes só com o ticker) ganha nome e setor.
+    for (const asset of assets) {
+      const item = catalog.find((entry) => entry.ticker === asset.ticker);
+      if (!item) continue;
+      const needsName = asset.name === asset.ticker && item.name;
+      const needsSector = !asset.sector && item.sector;
+      if (needsName || needsSector) {
+        await assetRepository.updateMeta(asset.id, {
+          name: needsName ? item.name : undefined,
+          sector: needsSector ? item.sector : undefined,
+        });
+      }
+    }
+
+    logger.info("Catálogo sincronizado", {
+      catalog: catalog.length,
+      assetsCreated,
+      pricesWritten,
+    });
+    return { assetsCreated, pricesWritten };
+  },
+
+  /**
+   * Atualiza os fundamentos de um punhado de ativos por ciclo, começando pelos mais
+   * desatualizados.
+   *
+   * O provedor cobra por ticker (200/dia no plano gratuito), então varrer o mercado
+   * inteiro de uma vez é impossível — a rotação cobre a base ao longo dos dias em vez de
+   * gastar a cota sempre nos mesmos ativos.
+   */
+  async refreshStaleFundamentals(limit = FUNDAMENTALS_PER_CYCLE): Promise<number> {
+    if (limit <= 0 || !getFundamentalsProvider()) return 0;
+
+    try {
+      const assets = await assetRepository.listStaleFundamentals(limit, ["STOCK", "FII", "BDR"]);
+      let updated = 0;
+      for (const asset of assets) {
+        if (await fetchAndStoreFundamentals(asset)) updated++;
+      }
+      return updated;
+    } catch (error) {
+      logger.error("Falha na rotação de fundamentos", { error: (error as Error).message });
+      return 0;
+    }
+  },
+
   /** Sincroniza todos os ativos ativos (uso do job agendado). */
   async syncAll(): Promise<SyncReport> {
-    const assets = await assetRepository.listActive();
-    return this.syncAssets(assets);
+    const catalog = await this.syncCatalog().catch((error) => {
+      logger.error("Falha ao sincronizar catálogo", { error: (error as Error).message });
+      return { assetsCreated: 0, pricesWritten: 0 };
+    });
+
+    // Só o que alguém acompanha entra no trabalho caro por ativo (fundamentos, proventos,
+    // histórico). O mercado inteiro já foi coberto pelo catálogo, que é uma requisição só.
+    const assets = await this.listTrackedAssets();
+    const report = await this.syncAssets(assets);
+    report.assetsCreated += catalog.assetsCreated;
+    report.fundamentalsUpdated += await this.refreshStaleFundamentals();
+    return report;
+  },
+
+  /** Ativos que aparecem em carteira, watchlist, alerta ou meta de qualquer usuário. */
+  async listTrackedAssets(): Promise<SyncTarget[]> {
+    const [positions, watchlist, alerts, targets] = await Promise.all([
+      prisma.position.findMany({ where: { quantity: { gt: 0 } }, select: { asset: true } }),
+      prisma.watchlistItem.findMany({ select: { asset: true } }),
+      prisma.alert.findMany({ select: { asset: true } }),
+      prisma.allocationTarget.findMany({
+        where: { assetId: { not: null } },
+        select: { asset: true },
+      }),
+    ]);
+
+    const byId = new Map<string, SyncTarget>();
+    for (const list of [positions, watchlist, alerts, targets]) {
+      for (const row of list) {
+        if (!row.asset) continue;
+        byId.set(row.asset.id, {
+          id: row.asset.id,
+          ticker: row.asset.ticker,
+          name: row.asset.name,
+          sector: row.asset.sector,
+          type: row.asset.type,
+        });
+      }
+    }
+
+    return [...byId.values()];
   },
 
   /** Sincroniza os ativos relevantes para um usuário: carteira, watchlist, alertas e metas. */
@@ -141,55 +345,8 @@ export const marketSyncService = {
     // ------------------------------------------------------------
     // 2. Fundamentos — uma requisição por ativo, com cache de 12h.
     // ------------------------------------------------------------
-    const fundamentals = getFundamentalsProvider();
-    if (fundamentals) {
-      for (const asset of assets) {
-        try {
-          const data = await fundamentals.getFundamentals(asset.ticker, asset.type === "FII");
-          if (!data) continue;
-
-          await assetFundamentalRepository.upsertSnapshot(
-            asset.id,
-            new Date(),
-            compact({
-              pl: data.pl,
-              pvp: data.pvp,
-              dividendYield: data.dividendYield,
-              roe: data.roe,
-              roic: data.roic,
-              netMargin: data.netMargin,
-              ebitdaMargin: data.ebitdaMargin,
-              evEbit: data.evEbit,
-              evEbitda: data.evEbitda,
-              netDebt: data.netDebt,
-              netDebtEbitda: data.netDebtEbitda,
-              equity: data.equity,
-              marketCap: data.marketCap,
-              revenueGrowth: data.revenueGrowth,
-              earningsGrowth: data.earningsGrowth,
-              vacancy: data.vacancy,
-              numberOfProperties: data.numberOfProperties,
-              numberOfShareholders: data.numberOfShareholders,
-              managerName: data.managerName,
-            }),
-          );
-
-          // O segmento do FII vive no cadastro do ativo, não no snapshot.
-          if (data.segment) {
-            await prisma.asset.update({
-              where: { id: asset.id },
-              data: { segment: data.segment },
-            });
-          }
-
-          report.fundamentalsUpdated++;
-        } catch (error) {
-          logger.warn("Falha ao sincronizar fundamentos", {
-            ticker: asset.ticker,
-            error: (error as Error).message,
-          });
-        }
-      }
+    for (const asset of assets) {
+      if (await fetchAndStoreFundamentals(asset)) report.fundamentalsUpdated++;
     }
 
     // ------------------------------------------------------------

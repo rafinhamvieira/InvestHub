@@ -69,6 +69,11 @@ export const contributionRequestSchema = z.object({
    * dezenas de candidatos e o plano viraria migalhas.
    */
   includeWatchlist: z.boolean().default(false),
+  /**
+   * Quantos ativos que o usuário ainda não tem podem entrar na recomendação, por classe.
+   * Entram os de melhor nota entre os que têm dados. 0 = só o que já está na carteira.
+   */
+  suggestionsPerClass: z.coerce.number().min(0).max(10).default(0),
 });
 
 export type ContributionRequest = z.infer<typeof contributionRequestSchema>;

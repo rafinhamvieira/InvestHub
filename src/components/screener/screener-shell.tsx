@@ -65,6 +65,9 @@ function formatValue(value: ScreenerValue, format: ColumnFormat): string {
   }
 }
 
+/** Linhas renderizadas por vez; o resto entra sob demanda no "Mostrar mais". */
+const PAGE_SIZE = 100;
+
 interface ScreenerShellProps {
   config: ScreenerConfig;
   rows: ScreenerRow[];
@@ -99,6 +102,11 @@ export function ScreenerShell({ config, rows: initialRows }: ScreenerShellProps)
     if (favoritesOnly) result = result.filter((r) => r.favorite);
     return sortRows(result, sortKey, sortDir);
   }, [rows, search, filters, favoritesOnly, sortKey, sortDir]);
+
+  // O screener varre o mercado inteiro (~2000 ativos). Renderizar tudo de uma vez trava a
+  // tela; filtro, ordenação e CSV continuam valendo sobre o conjunto completo.
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const shown = visible.slice(0, limit);
 
   const activeFilterCount = Object.values(filters).filter(
     (f) => f.min !== undefined || f.max !== undefined || (f.value && f.value !== ""),
@@ -195,7 +203,11 @@ export function ScreenerShell({ config, rows: initialRows }: ScreenerShellProps)
         <ScoreWeightsDialog />
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{visible.length} ativos</span>
+          <span className="text-sm text-muted-foreground">
+            {visible.length > shown.length
+              ? `${shown.length} de ${visible.length} ativos`
+              : `${visible.length} ativos`}
+          </span>
           <Button variant="outline" onClick={exportCsv} disabled={visible.length === 0}>
             <Download />
             CSV
@@ -332,7 +344,7 @@ export function ScreenerShell({ config, rows: initialRows }: ScreenerShellProps)
                   </TableCell>
                 </TableRow>
               ) : (
-                visible.map((row) => (
+                shown.map((row) => (
                   <TableRow key={row.assetId}>
                     <TableCell>
                       <button
@@ -371,6 +383,14 @@ export function ScreenerShell({ config, rows: initialRows }: ScreenerShellProps)
               )}
             </TableBody>
           </Table>
+
+          {visible.length > shown.length && (
+            <div className="flex justify-center py-4">
+              <Button variant="outline" onClick={() => setLimit((current) => current + PAGE_SIZE)}>
+                Mostrar mais {Math.min(PAGE_SIZE, visible.length - shown.length)}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
