@@ -99,7 +99,7 @@ export default async function DashboardPage() {
             <CardDescription>
               Ações e BDRs pelo setor; FIIs pelo segmento do fundo.
               {data.sectorUnclassified > 0 &&
-                ` ETFs e Tesouro (${formatCurrency(data.sectorUnclassified)}) ficam de fora: não têm setor.`}
+                ` ${formatCurrency(data.sectorUnclassified)} ficam de fora por não ter setor: ETFs, renda fixa e fundos sem segmento sincronizado.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

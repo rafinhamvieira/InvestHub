@@ -112,7 +112,7 @@ export const dashboardService = {
     let totalInvested = 0;
     const sectorTotals = new Map<string, number>();
     const typeTotals = new Map<string, number>();
-    /** ETFs e Tesouro: sem setor por natureza, ficam fora do gráfico. */
+    /** ETFs, renda fixa e fundos sem segmento: sem setor, ficam fora do gráfico. */
     let sectorUnclassified = 0;
 
     for (const position of openPositions) {
@@ -214,7 +214,7 @@ export const dashboardService = {
         month,
         total,
       })),
-      // Percentual sobre o que tem setor: com ETF e Tesouro fora, usar o patrimônio
+      // Percentual sobre o que tem setor: com os sem classificação fora, usar o patrimônio
       // inteiro faria as fatias somarem menos de 100% sem explicação visível.
       bySector: toSlices(sectorTotals, totalValue - sectorUnclassified),
       sectorUnclassified,

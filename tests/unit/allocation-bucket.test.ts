@@ -6,12 +6,9 @@ describe("agrupamento por setor", () => {
     expect(
       sectorBucket({ type: "FII", sector: "Fundos Imobiliários", segment: "Logística" }),
     ).toBe("Logística");
-    expect(sectorBucket({ type: "FII", sector: "Fundos Imobiliários", segment: null })).toBe(
-      "FIIs sem segmento",
-    );
-    expect(sectorBucket({ type: "FII", sector: "Fundos Imobiliários", segment: "  " })).toBe(
-      "FIIs sem segmento",
-    );
+    // Sem segmento não há setor a mostrar: o fundo fica fora do gráfico.
+    expect(sectorBucket({ type: "FII", sector: "Fundos Imobiliários", segment: null })).toBeNull();
+    expect(sectorBucket({ type: "FII", sector: "Fundos Imobiliários", segment: "  " })).toBeNull();
   });
 
   it("mantém o setor das ações e BDRs", () => {
