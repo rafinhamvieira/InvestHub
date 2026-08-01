@@ -98,6 +98,8 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">Alocação por setor</CardTitle>
             <CardDescription>
               Ações e BDRs pelo setor; FIIs pelo segmento do fundo.
+              {data.sectorUnclassified > 0 &&
+                ` ETFs e Tesouro (${formatCurrency(data.sectorUnclassified)}) ficam de fora: não têm setor.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

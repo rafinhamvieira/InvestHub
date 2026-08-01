@@ -6,8 +6,10 @@
  * FIIs em uma fatia só e repete o que o gráfico por tipo já mostra. O que separa um FII
  * de outro é o **segmento** (Logística, Papel, Shoppings...), e é ele que entra aqui.
  *
- * Mesma lógica para Tesouro e ETF: não são setores, então ganham um rótulo próprio em
- * vez de cair em "Outros" junto com ações sem classificação.
+ * ETF e Tesouro não têm nem setor nem equivalente: um ETF é uma cesta que cruza vários
+ * setores e um título público não tem setor nenhum. Em vez de inventar uma fatia com o
+ * nome da classe — que é exatamente o problema do "Fundos Imobiliários" — eles ficam de
+ * fora do gráfico, e o valor correspondente é informado à parte.
  */
 
 import type { AssetType } from "@prisma/client";
@@ -18,14 +20,14 @@ export interface BucketAsset {
   segment?: string | null;
 }
 
-export function sectorBucket(asset: BucketAsset): string {
+/** `null` = ativo sem setor possível; não entra no gráfico de setores. */
+export function sectorBucket(asset: BucketAsset): string | null {
   switch (asset.type) {
     case "FII":
       return asset.segment?.trim() || "FIIs sem segmento";
-    case "TREASURY":
-      return "Tesouro Direto";
     case "ETF":
-      return "ETFs";
+    case "TREASURY":
+      return null;
     default:
       return asset.sector?.trim() || "Outros";
   }

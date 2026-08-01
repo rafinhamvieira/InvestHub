@@ -24,10 +24,10 @@ describe("agrupamento por setor", () => {
     expect(sectorBucket({ type: "STOCK", sector: null })).toBe("Outros");
   });
 
-  it("dá rótulo próprio a classes que não têm setor", () => {
-    expect(sectorBucket({ type: "TREASURY", sector: null })).toBe("Tesouro Direto");
-    expect(sectorBucket({ type: "ETF", sector: null })).toBe("ETFs");
-    // ETF com setor herdado da fonte continua sendo ETF.
-    expect(sectorBucket({ type: "ETF", sector: "Finance" })).toBe("ETFs");
+  it("deixa fora do gráfico o que não tem setor por natureza", () => {
+    expect(sectorBucket({ type: "TREASURY", sector: null })).toBeNull();
+    expect(sectorBucket({ type: "ETF", sector: null })).toBeNull();
+    // Mesmo com setor vindo da fonte, ETF é cesta de vários setores: continua fora.
+    expect(sectorBucket({ type: "ETF", sector: "Finance" })).toBeNull();
   });
 });

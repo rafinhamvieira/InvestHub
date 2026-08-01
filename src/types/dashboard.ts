@@ -40,5 +40,7 @@ export interface DashboardData {
   evolution: EvolutionPoint[];
   dividendsByMonth: MonthlyDividendPoint[];
   bySector: AllocationSlice[];
+  /** Valor em ETFs e Tesouro — sem setor por natureza, fora do gráfico de setores. */
+  sectorUnclassified: number;
   byType: AllocationSlice[];
 }

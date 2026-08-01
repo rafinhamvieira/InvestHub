@@ -64,6 +64,7 @@ export const dashboardService = {
       evolution: [],
       dividendsByMonth: [],
       bySector: [],
+      sectorUnclassified: 0,
       byType: [],
     };
 
@@ -110,6 +111,8 @@ export const dashboardService = {
     let totalInvested = 0;
     const sectorTotals = new Map<string, number>();
     const typeTotals = new Map<string, number>();
+    /** ETFs e Tesouro: sem setor por natureza, ficam fora do gráfico. */
+    let sectorUnclassified = 0;
 
     for (const position of openPositions) {
       const price = latestPriceMap.get(position.assetId) ?? position.averagePrice;
@@ -120,7 +123,8 @@ export const dashboardService = {
       const meta = assetMeta.get(position.assetId);
       const bucket = meta ? sectorBucket(meta) : "Outros";
       const typeLabel = meta ? TYPE_LABELS[meta.type] : "Outros";
-      sectorTotals.set(bucket, (sectorTotals.get(bucket) ?? 0) + value);
+      if (bucket === null) sectorUnclassified += value;
+      else sectorTotals.set(bucket, (sectorTotals.get(bucket) ?? 0) + value);
       typeTotals.set(typeLabel, (typeTotals.get(typeLabel) ?? 0) + value);
     }
 
@@ -209,7 +213,10 @@ export const dashboardService = {
         month,
         total,
       })),
-      bySector: toSlices(sectorTotals, totalValue),
+      // Percentual sobre o que tem setor: com ETF e Tesouro fora, usar o patrimônio
+      // inteiro faria as fatias somarem menos de 100% sem explicação visível.
+      bySector: toSlices(sectorTotals, totalValue - sectorUnclassified),
+      sectorUnclassified,
       byType: toSlices(typeTotals, totalValue),
     };
   },
