@@ -263,3 +263,44 @@ describe("diagnóstico de nenhuma compra", () => {
     expect(plan.reason).toBeNull();
   });
 });
+
+describe("distribuição entre vários ativos", () => {
+  it("divide a meta da classe entre seus ativos em vez de concentrar no mais barato", () => {
+    // Meta: 50% FIIs. Dois FIIs com preços muito diferentes — sem meta individual.
+    // O barato não pode levar tudo só por ser barato.
+    const plan = buildContributionPlan(
+      [
+        asset({ assetId: "S", ticker: "AAAA3", assetClass: "STOCK", price: 20, currentValue: 4700 }),
+        asset({ assetId: "F1", ticker: "FFFF11", assetClass: "FII", price: 10, currentValue: 800 }),
+        asset({ assetId: "F2", ticker: "GGGG11", assetClass: "FII", price: 105, currentValue: 500 }),
+      ],
+      targets({ byClass: new Map([["STOCK", 0.5], ["FII", 0.5]]) }),
+      1500,
+      REBALANCE_ONLY,
+    );
+
+    expect(plan.items.length).toBe(2);
+    expect(plan.items.every((i) => i.ticker !== "AAAA3")).toBe(true);
+  });
+
+  it("atende primeiro quem está mais longe da meta, mesmo sendo mais caro", () => {
+    // F2 tem 500 e F1 tem 800: F2 está mais deficitário e deve receber mais,
+    // apesar da cota custar 10x mais.
+    const plan = buildContributionPlan(
+      [
+        asset({ assetId: "F1", ticker: "FFFF11", assetClass: "FII", price: 10, currentValue: 800 }),
+        asset({ assetId: "F2", ticker: "GGGG11", assetClass: "FII", price: 105, currentValue: 500 }),
+      ],
+      targets({ byClass: new Map([["FII", 1]]) }),
+      1500,
+      REBALANCE_ONLY,
+    );
+
+    const f1 = plan.items.find((i) => i.assetId === "F1")!;
+    const f2 = plan.items.find((i) => i.assetId === "F2")!;
+    expect(f2.invested).toBeGreaterThan(f1.invested);
+
+    // E os dois terminam com pesos próximos — o objetivo do rebalanceamento.
+    expect(Math.abs(f1.weightAfter - f2.weightAfter)).toBeLessThan(0.06);
+  });
+});

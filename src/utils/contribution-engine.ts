@@ -60,6 +60,35 @@ interface SimState {
   total: number;
   classOf?: Map<string, string>;
   sectorOf?: Map<string, string | null>;
+  /** Quantos ativos compõem cada classe/setor — usado para dividir a meta do grupo. */
+  classMembers?: Map<string, number>;
+  sectorMembers?: Map<string, number>;
+}
+
+/**
+ * Meta implícita de um ativo que não tem meta própria.
+ *
+ * Sem isso, todos os ativos de uma mesma classe empatam na pontuação e o desempate por
+ * preço concentraria o aporte inteiro no mais barato. Dividimos a meta do grupo entre
+ * seus integrantes, o que distribui o aporte e ainda respeita a meta da classe. Uma meta
+ * individual explícita sempre tem prioridade sobre esta.
+ */
+function implicitAssetTarget(
+  asset: EngineAsset,
+  targets: TargetSet,
+  state: SimState,
+): number | undefined {
+  const classTarget = targets.byClass.get(asset.assetClass);
+  const classCount = state.classMembers?.get(asset.assetClass) ?? 0;
+  if (classTarget !== undefined && classCount > 0) return classTarget / classCount;
+
+  if (asset.sector) {
+    const sectorTarget = targets.bySector.get(asset.sector);
+    const sectorCount = state.sectorMembers?.get(asset.sector) ?? 0;
+    if (sectorTarget !== undefined && sectorCount > 0) return sectorTarget / sectorCount;
+  }
+
+  return undefined;
 }
 
 /**
@@ -73,7 +102,8 @@ function combinedGap(asset: EngineAsset, targets: TargetSet, state: SimState): n
 
   const parts: Array<{ weight: number; gap: number }> = [];
 
-  const assetTarget = targets.byAsset.get(asset.assetId);
+  const assetTarget =
+    targets.byAsset.get(asset.assetId) ?? implicitAssetTarget(asset, targets, state);
   if (assetTarget !== undefined) {
     const weight = total ? (state.values.get(asset.assetId) ?? 0) / total : 0;
     parts.push({ weight: 0.5, gap: assetTarget - weight });
@@ -130,31 +160,51 @@ function valuationScores(asset: EngineAsset): Omit<CriterionScores, "rebalance">
   };
 }
 
-/** Score 0–1 combinando os critérios habilitados (média dos disponíveis). */
+/**
+ * Pontuação dos critérios habilitados.
+ *
+ * Devolve dois números de propósito diferente:
+ *  - `score` (0–1, saturado) é a nota de oportunidade mostrada ao usuário;
+ *  - `rank` usa o gap sem saturar, e é o que ordena as compras.
+ *
+ * A distinção importa: com saturação, dois ativos 15 e 30 p.p. abaixo da meta
+ * empatariam na nota máxima, e o desempate por preço concentraria o aporte no mais
+ * barato. Ordenando pelo valor bruto, quem está mais longe da meta é atendido primeiro.
+ */
 function combinedScore(
   asset: EngineAsset,
   targets: TargetSet,
   state: SimState,
   strategy: StrategyConfig,
-): { score: number; criteria: CriterionScores } {
+): { score: number; rank: number; criteria: CriterionScores } {
   const valuation = valuationScores(asset);
   const gap = combinedGap(asset, targets, state);
+  const rebalanceRaw = gap === null ? null : gap / GAP_SATURATION;
+
   const criteria: CriterionScores = {
-    rebalance: gap === null ? null : clamp01(gap / GAP_SATURATION),
+    rebalance: rebalanceRaw === null ? null : clamp01(rebalanceRaw),
     ...valuation,
   };
 
-  const enabled: Array<number | null> = [];
-  if (strategy.rebalance) enabled.push(criteria.rebalance);
-  if (strategy.belowFair) enabled.push(criteria.belowFair);
-  if (strategy.belowCeiling) enabled.push(criteria.belowCeiling);
-  if (strategy.safetyMargin) enabled.push(criteria.safetyMargin);
-  if (strategy.dividendYield) enabled.push(criteria.dividendYield);
+  const forScore: Array<number | null> = [];
+  const forRank: Array<number | null> = [];
+  const add = (clamped: number | null, raw: number | null) => {
+    forScore.push(clamped);
+    forRank.push(raw);
+  };
 
-  const available = enabled.filter((v): v is number => v !== null);
-  const score = available.length > 0 ? available.reduce((s, v) => s + v, 0) / available.length : 0;
+  if (strategy.rebalance) add(criteria.rebalance, rebalanceRaw);
+  if (strategy.belowFair) add(criteria.belowFair, criteria.belowFair);
+  if (strategy.belowCeiling) add(criteria.belowCeiling, criteria.belowCeiling);
+  if (strategy.safetyMargin) add(criteria.safetyMargin, criteria.safetyMargin);
+  if (strategy.dividendYield) add(criteria.dividendYield, criteria.dividendYield);
 
-  return { score, criteria };
+  const mean = (values: Array<number | null>) => {
+    const available = values.filter((v): v is number => v !== null);
+    return available.length > 0 ? available.reduce((s, v) => s + v, 0) / available.length : 0;
+  };
+
+  return { score: mean(forScore), rank: mean(forRank), criteria };
 }
 
 function formatBRL(value: number): string {
@@ -234,11 +284,20 @@ export function buildContributionPlan(
   const sectorOf = new Map(investable.map((a) => [a.assetId, a.sector]));
   const totalBefore = investable.reduce((sum, a) => sum + a.currentValue, 0);
 
+  const classMembers = new Map<string, number>();
+  const sectorMembers = new Map<string, number>();
+  for (const a of investable) {
+    classMembers.set(a.assetClass, (classMembers.get(a.assetClass) ?? 0) + 1);
+    if (a.sector) sectorMembers.set(a.sector, (sectorMembers.get(a.sector) ?? 0) + 1);
+  }
+
   const initialState: SimState = {
     values: new Map(investable.map((a) => [a.assetId, a.currentValue])),
     total: totalBefore,
     classOf,
     sectorOf,
+    classMembers,
+    sectorMembers,
   };
 
   // Score/gap "antes do aporte" para exibição e explicações.
@@ -260,6 +319,8 @@ export function buildContributionPlan(
     total: totalBefore + amount,
     classOf,
     sectorOf,
+    classMembers,
+    sectorMembers,
   };
   const quantities = new Map<string, number>();
   let remaining = amount;
@@ -271,13 +332,10 @@ export function buildContributionPlan(
 
     for (const asset of investable) {
       if (asset.price > remaining) continue;
-      const { score } = combinedScore(asset, targets, state, strategy);
-      if (
-        score > bestScore ||
-        (score === bestScore && best !== null && asset.price < best.price)
-      ) {
+      const { rank } = combinedScore(asset, targets, state, strategy);
+      if (rank > bestScore || (rank === bestScore && best !== null && asset.price < best.price)) {
         best = asset;
-        bestScore = score;
+        bestScore = rank;
       }
     }
 
