@@ -254,6 +254,7 @@ export const marketSyncService = {
     // Renda fixa não tem cotação: o valor do dia sai da curva do indexador.
     try {
       report.fixedIncomeUpdated = await fixedIncomeService.syncPrices();
+      await fixedIncomeService.notifyMaturities();
     } catch (error) {
       logger.error("Falha ao atualizar renda fixa", { error: (error as Error).message });
     }

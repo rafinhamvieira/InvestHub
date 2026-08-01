@@ -33,6 +33,10 @@ export const positionRepository = {
     });
   },
 
+  findByUserAndAsset(userId: string, assetId: string) {
+    return prisma.position.findUnique({ where: { userId_assetId: { userId, assetId } } });
+  },
+
   delete(userId: string, assetId: string) {
     return prisma.position
       .delete({ where: { userId_assetId: { userId, assetId } } })

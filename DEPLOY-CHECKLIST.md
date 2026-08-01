@@ -13,6 +13,25 @@ npm run typecheck && npm run lint && npm test
 
 Os três precisam passar. O hook de commit já roda parte disso, mas rodar antes evita commit quebrado.
 
+### Testes de integração (opcional, contra banco real)
+
+Os testes de `npm test` são de função pura. Os de integração exercitam o caminho completo
+— transação → posição consolidada → carteira agrupada — contra um Postgres de verdade.
+Rodam no servidor, num banco separado, usando a imagem `migrate` (que tem as dependências
+de desenvolvimento):
+
+```bash
+docker compose exec -T postgres psql -U investhub -d postgres -c "CREATE DATABASE investhub_test;"
+```
+
+```bash
+docker compose run --rm -e DATABASE_URL="postgresql://investhub:$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)@postgres:5432/investhub_test" -e TEST_DATABASE_URL="postgresql://investhub:$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)@postgres:5432/investhub_test" migrate sh -c "npx prisma migrate deploy && npx vitest run --config vitest.integration.config.ts"
+```
+
+Sem `TEST_DATABASE_URL` a suíte se declara ignorada em vez de falhar — por isso ela não
+atrapalha o `npm test` do dia a dia. O banco de teste é truncado a cada caso; o banco de
+produção nunca é tocado.
+
 ## 2. Commitar e enviar
 
 ```bash

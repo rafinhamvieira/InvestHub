@@ -2,10 +2,24 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Building2, Coins, Landmark, LineChart, PiggyBank, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import {
+  ChevronDown,
+  Building2,
+  Coins,
+  Landmark,
+  LineChart,
+  Loader2,
+  PiggyBank,
+  Wallet,
+} from "lucide-react";
+import { extractApiError } from "@/utils/api-error";
 import { formatCurrency, formatPercent, formatSignedPercent } from "@/utils/format";
 import { formatDateOnly } from "@/utils/date";
 import type { PortfolioGroup, PositionDTO } from "@/types/portfolio";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { AssetType } from "@prisma/client";
@@ -55,6 +69,29 @@ function Signed({ value }: { value: number | null }) {
 }
 
 function FixedIncomeRows({ positions }: { positions: PositionDTO[] }) {
+  const router = useRouter();
+  const [redeeming, setRedeeming] = useState<string | null>(null);
+
+  async function redeem(position: PositionDTO) {
+    setRedeeming(position.assetId);
+
+    const response = await fetch("/api/portfolio/fixed-income/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId: position.assetId }),
+    });
+
+    setRedeeming(null);
+
+    if (!response.ok) {
+      toast.error(await extractApiError(response, "Não foi possível registrar o resgate."));
+      return;
+    }
+
+    toast.success(`${position.name} baixado da carteira.`);
+    router.refresh();
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -66,39 +103,59 @@ function FixedIncomeRows({ positions }: { positions: PositionDTO[] }) {
           <TableHead className="text-right">Valor atual</TableHead>
           <TableHead className="text-right">Rendimento</TableHead>
           <TableHead className="text-right">% carteira</TableHead>
+          <TableHead />
         </TableRow>
       </TableHeader>
       <TableBody>
-        {positions.map((position) => (
-          <TableRow key={position.assetId}>
-            <TableCell>
-              <span className="font-medium">{position.name}</span>
-              {position.fixedIncome?.issuer && (
-                <p className="text-xs text-muted-foreground">{position.fixedIncome.issuer}</p>
-              )}
-            </TableCell>
-            <TableCell className="text-muted-foreground">
-              {position.fixedIncome?.remuneration ?? "—"}
-            </TableCell>
-            <TableCell className="text-right tabular-nums">
-              {position.fixedIncome?.maturityDate
-                ? formatDateOnly(position.fixedIncome.maturityDate)
-                : "sem vencimento"}
-            </TableCell>
-            <TableCell className="text-right tabular-nums">
-              {formatCurrency(position.totalInvested)}
-            </TableCell>
-            <TableCell className="text-right font-medium tabular-nums">
-              {formatCurrency(position.currentValue)}
-            </TableCell>
-            <TableCell className="text-right tabular-nums">
-              <Signed value={position.profitPercent} />
-            </TableCell>
-            <TableCell className="text-right tabular-nums">
-              {formatPercent(position.weight)}
-            </TableCell>
-          </TableRow>
-        ))}
+        {positions.map((position) => {
+          const maturity = position.fixedIncome?.maturityDate;
+          const matured = maturity ? new Date(maturity) <= new Date() : false;
+
+          return (
+            <TableRow key={position.assetId}>
+              <TableCell>
+                <span className="font-medium">{position.name}</span>
+                {position.fixedIncome?.issuer && (
+                  <p className="text-xs text-muted-foreground">{position.fixedIncome.issuer}</p>
+                )}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {position.fixedIncome?.remuneration ?? "—"}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {maturity ? formatDateOnly(maturity) : "sem vencimento"}
+                {matured && (
+                  <Badge variant="warning" className="ml-2">
+                    vencido
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatCurrency(position.totalInvested)}
+              </TableCell>
+              <TableCell className="text-right font-medium tabular-nums">
+                {formatCurrency(position.currentValue)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                <Signed value={position.profitPercent} />
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatPercent(position.weight)}
+              </TableCell>
+              <TableCell className="text-right">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={redeeming === position.assetId}
+                  onClick={() => redeem(position)}
+                >
+                  {redeeming === position.assetId && <Loader2 className="animate-spin" />}
+                  Resgatar
+                </Button>
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

@@ -11,11 +11,15 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { sendEmail, alertEmailTemplate } from "@/lib/email";
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { fixedIncomeRepository } from "@/repositories/fixed-income.repository";
+import { notificationRepository } from "@/repositories/notification.repository";
+import { positionRepository } from "@/repositories/position.repository";
 import { BcbProvider } from "@/services/market-data/bcb.provider";
 import { unitValueAt, type FixedIncomeCurve, type Indexer } from "@/utils/fixed-income-math";
-import { toUtcDateOnly } from "@/utils/date";
+import { formatCurrency } from "@/utils/format";
+import { formatDateOnly, toUtcDateOnly } from "@/utils/date";
 import type { AssetType, FixedIncomeIndexer } from "@prisma/client";
 
 export interface FixedIncomeInput {
@@ -30,6 +34,9 @@ export interface FixedIncomeInput {
 }
 
 const bcb = new BcbProvider();
+
+/** Quantos dias antes do vencimento o usuário é avisado (0 = no dia). */
+const MATURITY_NOTICE_DAYS = [30, 7, 0];
 
 function slugify(value: string): string {
   return value
@@ -114,6 +121,71 @@ export const fixedIncomeService = {
       curve,
       at,
     );
+  },
+
+  /**
+   * Avisa quem tem o título antes e no dia do vencimento.
+   *
+   * Um papel vencido para de render e vira caixa na corretora, mas continua na carteira até
+   * alguém dar baixa. Sem aviso, o patrimônio passa a mentir em silêncio conforme os CDBs
+   * vencem — e o dinheiro fica parado sem ninguém lembrar de reinvestir.
+   *
+   * A baixa em si não é automática: o resgate é decisão do usuário (pode ter havido
+   * renovação, portabilidade, resgate antecipado) e o sistema não inventa transação no
+   * ledger de ninguém.
+   */
+  async notifyMaturities(reference = new Date()): Promise<number> {
+    const today = toUtcDateOnly(reference);
+    const instruments = await fixedIncomeRepository.listAll();
+    let notified = 0;
+
+    for (const terms of instruments) {
+      if (!terms.maturityDate) continue;
+
+      const daysLeft = Math.round(
+        (toUtcDateOnly(terms.maturityDate).getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      if (!MATURITY_NOTICE_DAYS.includes(daysLeft)) continue;
+
+      const holders = await positionRepository.findHoldersOfAssets([terms.assetId]);
+      if (holders.length === 0) continue;
+
+      const unitValue = await this.getUnitValue(terms.assetId, terms.maturityDate);
+
+      for (const holder of holders) {
+        const total = Number(holder.quantity) * unitValue;
+        const title =
+          daysLeft === 0
+            ? `${terms.asset.name} venceu`
+            : `${terms.asset.name} vence em ${daysLeft} dias`;
+        const message =
+          daysLeft === 0
+            ? `O título venceu hoje e parou de render. Valor no vencimento: ${formatCurrency(total)}. ` +
+              "Registre o resgate na carteira para tirar o papel da posição."
+            : `Vencimento em ${formatDateOnly(terms.maturityDate)}. ` +
+              `Valor estimado no vencimento: ${formatCurrency(total)}.`;
+
+        await notificationRepository.create(holder.userId, title, message);
+        notified++;
+
+        if (holder.user.email && holder.user.emailNotifications) {
+          try {
+            await sendEmail({
+              to: holder.user.email,
+              subject: `InvestHub — ${title}`,
+              html: alertEmailTemplate(message, `${process.env.APP_URL}/portfolio`, terms.asset.ticker),
+            });
+          } catch (error) {
+            logger.error("Falha ao enviar e-mail de vencimento", {
+              ticker: terms.asset.ticker,
+              error: (error as Error).message,
+            });
+          }
+        }
+      }
+    }
+
+    return notified;
   },
 
   /**

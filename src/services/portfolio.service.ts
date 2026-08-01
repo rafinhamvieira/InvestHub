@@ -231,6 +231,44 @@ export const portfolioService = {
     if (isFixedIncomeType(input.assetType)) await fixedIncomeService.syncPrices();
   },
 
+  /**
+   * Baixa um título de renda fixa: registra a venda da posição inteira pelo valor do dia
+   * (ou do vencimento, se já passou) e zera o papel na carteira.
+   *
+   * Fica como ação explícita porque resgate é decisão: o título pode ter sido renovado,
+   * levado para outra corretora ou resgatado antes da hora. O que o sistema faz é poupar a
+   * conta — o valor corrigido já está calculado.
+   */
+  async redeemFixedIncome(userId: string, assetId: string): Promise<void> {
+    const position = await positionRepository.findByUserAndAsset(userId, assetId);
+    if (!position || Number(position.quantity) <= 0) {
+      throw new PortfolioError("NOT_FOUND", "Título não encontrado na carteira.");
+    }
+
+    const terms = await fixedIncomeRepository.findByAsset(assetId);
+    if (!terms) {
+      throw new PortfolioError("NOT_FIXED_INCOME", "Este ativo não é um título de renda fixa.");
+    }
+
+    const today = new Date();
+    const settlement =
+      terms.maturityDate && terms.maturityDate < today ? terms.maturityDate : today;
+    const unitValue = await fixedIncomeService.getUnitValue(assetId, settlement);
+
+    await transactionRepository.create(userId, {
+      assetId,
+      brokerId: null,
+      type: "SELL",
+      quantity: Number(position.quantity),
+      price: unitValue,
+      fees: 0,
+      date: settlement,
+      notes: "Resgate registrado automaticamente.",
+    });
+
+    await recomputePosition(userId, assetId);
+  },
+
   async deleteTransaction(userId: string, transactionId: string): Promise<void> {
     const existing = await transactionRepository.findByIdAndUser(transactionId, userId);
     if (!existing) throw new PortfolioError("NOT_FOUND", "Transação não encontrada.");
