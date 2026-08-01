@@ -63,6 +63,12 @@ export const contributionRequestSchema = z.object({
    * Rede de proteção para estratégias que não se autoequilibram (ex: só Dividend Yield).
    */
   maxPerAsset: z.coerce.number().min(5).max(100).default(100),
+  /**
+   * Considerar também os ativos favoritados que ainda não estão na carteira.
+   * Fica desligado por padrão: uma watchlist grande diluiria a meta da classe entre
+   * dezenas de candidatos e o plano viraria migalhas.
+   */
+  includeWatchlist: z.boolean().default(false),
 });
 
 export type ContributionRequest = z.infer<typeof contributionRequestSchema>;

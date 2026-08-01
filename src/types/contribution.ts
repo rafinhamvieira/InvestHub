@@ -24,6 +24,8 @@ export interface PlanItem {
   /** Fração do patrimônio antes/depois do aporte. */
   weightBefore: number;
   weightAfter: number;
+  /** Meta individual resolvida (metas de classe/setor já repartidas). Null = sem meta. */
+  targetWeight: number | null;
 }
 
 export interface ClassProjection {

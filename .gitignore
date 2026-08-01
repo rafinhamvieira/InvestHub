@@ -41,3 +41,5 @@ npm-debug.log*
 
 # docker
 docker-data/
+
+HANDOFF.md

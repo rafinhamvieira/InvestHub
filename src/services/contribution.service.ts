@@ -1,6 +1,7 @@
 import { allocationTargetRepository } from "@/repositories/allocation-target.repository";
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { assetFundamentalRepository } from "@/repositories/asset-fundamental.repository";
+import { watchlistRepository } from "@/repositories/watchlist.repository";
 import { portfolioService } from "@/services/portfolio.service";
 import { buildContributionPlan, type EngineAsset, type TargetSet } from "@/utils/contribution-engine";
 import { grahamFairPrice, bazinCeilingPrice, lpaFromPl, vpaFromPvp } from "@/utils/valuation-math";
@@ -11,12 +12,16 @@ import type { AssetType } from "@prisma/client";
 
 export const contributionService = {
   async buildPlan(userId: string, request: ContributionRequest): Promise<ContributionPlan> {
-    const [portfolio, targets] = await Promise.all([
+    const [portfolio, targets, watchlist] = await Promise.all([
       portfolioService.getPortfolio(userId),
       allocationTargetRepository.findAllByUser(userId),
+      request.includeWatchlist
+        ? watchlistRepository.listItemsWithAsset(userId)
+        : Promise.resolve([]),
     ]);
 
-    // Universo: posições atuais + ativos com meta individual (mesmo sem posição).
+    // Universo: posições atuais + ativos com meta individual (mesmo sem posição)
+    // + favoritos, quando o usuário pedir.
     const universe = new Map<
       string,
       {
@@ -51,6 +56,19 @@ export const contributionService = {
         name: target.asset.name,
         type: target.asset.type,
         sector: target.asset.sector,
+        price: 0, // resolvido abaixo pela última cotação
+        currentValue: 0,
+      });
+    }
+
+    for (const item of watchlist) {
+      if (universe.has(item.asset.id)) continue;
+      universe.set(item.asset.id, {
+        assetId: item.asset.id,
+        ticker: item.asset.ticker,
+        name: item.asset.name,
+        type: item.asset.type,
+        sector: item.asset.sector,
         price: 0, // resolvido abaixo pela última cotação
         currentValue: 0,
       });

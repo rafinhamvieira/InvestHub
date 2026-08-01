@@ -66,7 +66,7 @@ const NO_PURCHASE_MESSAGES: Record<
   NO_ASSETS: {
     title: "Nenhum ativo para considerar",
     detail:
-      "A recomendação parte dos ativos da sua carteira, dos favoritos e daqueles com meta definida. Cadastre ao menos um para começar.",
+      "A recomendação parte dos ativos da sua carteira e daqueles com meta individual definida — e dos favoritos, se a opção estiver marcada. Cadastre ao menos um para começar.",
     action: { label: "Ir para Minha Carteira", href: "/portfolio" },
   },
   NO_PRICES: {
@@ -114,6 +114,7 @@ export function ContributionView() {
     dividendYield: false,
   });
   const [maxPerAsset, setMaxPerAsset] = useState("100");
+  const [includeWatchlist, setIncludeWatchlist] = useState(false);
   const [plan, setPlan] = useState<ContributionPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -126,7 +127,12 @@ export function ContributionView() {
     const response = await fetch("/api/contribution/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: Number(amount.replace(",", ".")), strategy, maxPerAsset: Number(maxPerAsset) }),
+      body: JSON.stringify({
+        amount: Number(amount.replace(",", ".")),
+        strategy,
+        maxPerAsset: Number(maxPerAsset),
+        includeWatchlist,
+      }),
     });
 
     setIsLoading(false);
@@ -152,8 +158,8 @@ export function ContributionView() {
         <CardHeader>
           <CardTitle className="text-base">Novo aporte</CardTitle>
           <CardDescription>
-            O algoritmo compra quantidades inteiras, unidade a unidade, sempre do ativo que mais
-            melhora a carteira segundo os critérios escolhidos.
+            O algoritmo divide o aporte entre os ativos que estão abaixo da meta, proporcional
+            ao que falta em cada um, e converte em quantidades inteiras de cotas.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -191,10 +197,24 @@ export function ContributionView() {
             </Button>
           </div>
 
+          <label className="flex w-fit cursor-pointer items-start gap-3 text-sm">
+            <Checkbox
+              checked={includeWatchlist}
+              onCheckedChange={(checked) => setIncludeWatchlist(checked === true)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block font-medium">Incluir favoritos</span>
+              <span className="block text-xs text-muted-foreground">
+                Considera também ativos da watchlist que ainda não estão na carteira.
+              </span>
+            </span>
+          </label>
+
           <p className="text-xs text-muted-foreground">
-            O limite é uma trava de segurança, não uma meta: com rebalanceamento ativo a
-            distribuição já sai do cálculo de quanto falta em cada ativo, e o teto raramente
-            chega a apertar.
+            O aporte é repartido entre todos os ativos abaixo da meta, na proporção do que
+            falta em cada um — nunca além da própria meta. O limite por ativo é só uma trava
+            de segurança para estratégias sem rebalanceamento.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -279,6 +299,7 @@ export function ContributionView() {
                       <TableHead className="text-right">Preço</TableHead>
                       <TableHead className="text-right">Investir</TableHead>
                       <TableHead className="text-right">% antes → depois</TableHead>
+                      <TableHead className="text-right">Meta</TableHead>
                       <TableHead className="w-40">Nota de oportunidade</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -308,6 +329,9 @@ export function ContributionView() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatPercent(item.weightBefore)} → {formatPercent(item.weightAfter)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {item.targetWeight !== null ? formatPercent(item.targetWeight) : "—"}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

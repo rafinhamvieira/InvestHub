@@ -305,6 +305,107 @@ describe("distribuição entre vários ativos", () => {
   });
 });
 
+describe("aporte se espalha pela carteira", () => {
+  it("reparte entre todos os deficitários em vez de encher um só", () => {
+    // Carteira de 6 ativos, todos abaixo da meta em graus diferentes.
+    const carteira = [
+      asset({ assetId: "A", ticker: "AAAA3", price: 25, currentValue: 200 }),
+      asset({ assetId: "B", ticker: "BBBB3", price: 30, currentValue: 400 }),
+      asset({ assetId: "C", ticker: "CCCC3", price: 18, currentValue: 600 }),
+      asset({ assetId: "D", ticker: "DDDD3", price: 45, currentValue: 100 }),
+      asset({ assetId: "E", ticker: "EEEE3", price: 12, currentValue: 300 }),
+      asset({ assetId: "F", ticker: "FFFF3", price: 60, currentValue: 400 }),
+    ];
+
+    const plan = buildContributionPlan(
+      carteira,
+      targets({
+        byAsset: new Map([
+          ["A", 0.2],
+          ["B", 0.2],
+          ["C", 0.15],
+          ["D", 0.15],
+          ["E", 0.15],
+          ["F", 0.15],
+        ]),
+      }),
+      3000,
+      REBALANCE_ONLY,
+    );
+
+    expect(plan.items.length).toBeGreaterThanOrEqual(5);
+    // Nenhum ativo leva mais da metade do aporte.
+    expect(Math.max(...plan.items.map((i) => i.invested))).toBeLessThan(1500);
+    expect(plan.spent).toBeGreaterThan(2900);
+  });
+
+  it("com metas só por classe, distribui dentro de cada classe", () => {
+    const plan = buildContributionPlan(
+      [
+        asset({ assetId: "A1", ticker: "AAAA3", assetClass: "STOCK", price: 20, currentValue: 500 }),
+        asset({ assetId: "A2", ticker: "BBBB3", assetClass: "STOCK", price: 35, currentValue: 300 }),
+        asset({ assetId: "F1", ticker: "FFFF11", assetClass: "FII", price: 10, currentValue: 200 }),
+        asset({ assetId: "F2", ticker: "GGGG11", assetClass: "FII", price: 95, currentValue: 100 }),
+      ],
+      targets({ byClass: new Map([["STOCK", 0.6], ["FII", 0.4]]) }),
+      4000,
+      REBALANCE_ONLY,
+    );
+
+    expect(plan.items).toHaveLength(4);
+    const stocks = plan.items.filter((i) => ["AAAA3", "BBBB3"].includes(i.ticker));
+    const fiis = plan.items.filter((i) => ["FFFF11", "GGGG11"].includes(i.ticker));
+    expect(stocks).toHaveLength(2);
+    expect(fiis).toHaveLength(2);
+    // A classe mais deficitária em relação à meta recebe mais.
+    const investidoEmAcoes = stocks.reduce((s, i) => s + i.invested, 0);
+    const investidoEmFiis = fiis.reduce((s, i) => s + i.invested, 0);
+    expect(investidoEmAcoes).toBeGreaterThan(investidoEmFiis);
+  });
+
+  it("meta individual tem prioridade e o resto da classe divide o que sobra", () => {
+    const plan = buildContributionPlan(
+      [
+        asset({ assetId: "A", ticker: "AAAA3", assetClass: "STOCK", price: 10, currentValue: 0 }),
+        asset({ assetId: "B", ticker: "BBBB3", assetClass: "STOCK", price: 10, currentValue: 0 }),
+        asset({ assetId: "C", ticker: "CCCC3", assetClass: "STOCK", price: 10, currentValue: 0 }),
+      ],
+      targets({
+        byAsset: new Map([["A", 0.5]]),
+        byClass: new Map([["STOCK", 1]]),
+      }),
+      1000,
+      REBALANCE_ONLY,
+    );
+
+    const investido = (id: string) => plan.items.find((i) => i.assetId === id)?.invested ?? 0;
+    expect(investido("A")).toBe(500);
+    expect(investido("B")).toBe(250);
+    expect(investido("C")).toBe(250);
+  });
+
+  it("valuation apenas inclina a divisão quando o rebalanceamento está ativo", () => {
+    const base = [
+      asset({ assetId: "A", ticker: "AAAA3", price: 10, currentValue: 0, dividendYield: 0.12 }),
+      asset({ assetId: "B", ticker: "BBBB3", price: 10, currentValue: 0, dividendYield: 0.01 }),
+      // Posição sem meta: só engorda o patrimônio, deixando os déficits maiores que o aporte.
+      asset({ assetId: "C", ticker: "CCCC3", price: 10, currentValue: 2000 }),
+    ];
+    const metas = targets({ byAsset: new Map([["A", 0.4], ["B", 0.4]]) });
+
+    // Aporte menor que a soma dos déficits: a nota decide quem recebe mais.
+    const plan = buildContributionPlan(base, metas, 500, {
+      ...REBALANCE_ONLY,
+      dividendYield: true,
+    });
+
+    const investido = (id: string) => plan.items.find((i) => i.assetId === id)?.invested ?? 0;
+    // O melhor pagador recebe mais, mas o outro não fica de fora.
+    expect(investido("A")).toBeGreaterThan(investido("B"));
+    expect(investido("B")).toBeGreaterThan(0);
+  });
+});
+
 describe("limite de concentração por ativo", () => {
   const cinco = [
     asset({ assetId: "A", ticker: "AAAA3", price: 10, dividendYield: 0.12 }),
@@ -313,13 +414,17 @@ describe("limite de concentração por ativo", () => {
     asset({ assetId: "D", ticker: "DDDD3", price: 10, dividendYield: 0.09 }),
   ];
 
-  it("sem limite, um critério estático concentra tudo no melhor ativo", () => {
+  it("sem limite, um critério estático distribui favorecendo as melhores notas", () => {
     const plan = buildContributionPlan(cinco, targets(), 10000, {
       ...REBALANCE_ONLY,
       rebalance: false,
       dividendYield: true,
     });
-    expect(plan.items).toHaveLength(1);
+
+    expect(plan.items.length).toBeGreaterThan(1);
+    // Ordenado por valor investido: o maior pagador recebe mais que o menor.
+    expect(plan.items[0]!.assetId).toBe("A");
+    expect(plan.items[0]!.invested).toBeGreaterThan(plan.items.at(-1)!.invested);
   });
 
   it("com limite de 30%, nenhum ativo passa do teto enquanto houver alternativas", () => {
