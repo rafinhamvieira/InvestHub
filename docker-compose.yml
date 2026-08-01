@@ -50,6 +50,12 @@ services:
       target: runner
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Mesma pasta do serviço `backup`: o painel lista os dumps automáticos e escreve os
+      # gerados sob demanda no mesmo lugar.
+      BACKUP_DIR: /backups
+    volumes:
+      - ./backups:/backups
     expose:
       - "3000"
     depends_on:
@@ -162,6 +168,9 @@ services:
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Mesmo uid do processo da aplicação: os dumps automáticos precisam ser legíveis pelo
+    # painel administrativo, e os gerados por lá, graváveis nesta mesma pasta.
+    user: "1001:1001"
     depends_on:
       postgres:
         condition: service_healthy

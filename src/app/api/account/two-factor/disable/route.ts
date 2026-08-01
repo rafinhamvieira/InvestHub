@@ -5,6 +5,7 @@ import { twoFactorService } from "@/services/two-factor.service";
 import { userRepository } from "@/repositories/user.repository";
 import { verifyPassword } from "@/lib/crypto";
 import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { AUDIT_ACTIONS } from "@/constants/audit";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   }
 
   await twoFactorService.disable(session.user.id);
-  await auditLogRepository.record({ userId: session.user.id, action: "TWO_FACTOR_DISABLED" });
+  await auditLogRepository.record({ userId: session.user.id, action: AUDIT_ACTIONS.TWO_FACTOR_DISABLED });
 
   return NextResponse.json({ message: "2FA desativado." });
 }

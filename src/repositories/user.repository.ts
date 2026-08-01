@@ -14,6 +14,62 @@ export const userRepository = {
     return prisma.user.create({ data });
   },
 
+  /**
+   * Listagem do painel administrativo.
+   *
+   * O `select` é explícito e enxuto de propósito: sem `include` de carteira, sem `_count`
+   * de transações. O que não é selecionado aqui não tem como vazar para a tela.
+   */
+  async listForAdmin(options: { search?: string; page: number; pageSize: number }) {
+    const where = options.search
+      ? {
+          OR: [
+            { name: { contains: options.search, mode: "insensitive" as const } },
+            { email: { contains: options.search, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
+
+    const [rows, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          emailVerified: true,
+          twoFactorEnabled: true,
+          lockedUntil: true,
+          failedLoginAttempts: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (options.page - 1) * options.pageSize,
+        take: options.pageSize,
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    return { rows, total };
+  },
+
+  updateEmail(userId: string, email: string): Promise<User> {
+    // O e-mail novo entra como não verificado: quem prova a posse é o dono da caixa,
+    // não quem digitou o endereço no painel.
+    return prisma.user.update({
+      where: { id: userId },
+      data: { email, emailVerified: null },
+    });
+  },
+
+  unlock(userId: string): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  },
+
   update(
     userId: string,
     data: Partial<

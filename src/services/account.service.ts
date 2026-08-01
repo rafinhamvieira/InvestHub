@@ -1,6 +1,7 @@
 import { userRepository } from "@/repositories/user.repository";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
 import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { AUDIT_ACTIONS } from "@/constants/audit";
 import { passwordResetRepository } from "@/repositories/password-reset.repository";
 import { hashPassword, verifyPassword } from "@/lib/crypto";
 import type { ProfileInput, PreferencesInput, ChangePasswordInput } from "@/schemas/account.schema";
@@ -100,7 +101,7 @@ export const accountService = {
     await passwordResetRepository.invalidateAllForUser(userId);
     await auditLogRepository.record({
       userId,
-      action: "PASSWORD_CHANGED",
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });

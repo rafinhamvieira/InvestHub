@@ -9,6 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { twoFactorService } from "@/services/two-factor.service";
 import { AUTH_CONSTANTS, AUTH_ERROR_CODES } from "@/constants/auth";
+import { AUDIT_ACTIONS } from "@/constants/audit";
 import type { RegisterInput, LoginInput } from "@/schemas/auth.schema";
 
 export class AuthError extends Error {
@@ -37,7 +38,7 @@ export const authService = {
     if (existing) {
       // Não revela que o e-mail já existe: comportamento idêntico ao de sucesso.
       await auditLogRepository.record({
-        action: "REGISTER_ATTEMPT_DUPLICATE",
+        action: AUDIT_ACTIONS.REGISTER_ATTEMPT_DUPLICATE,
         entity: "User",
         metadata: { email: input.email },
         ipAddress: ctx.ipAddress,
@@ -55,7 +56,7 @@ export const authService = {
 
     await auditLogRepository.record({
       userId: user.id,
-      action: "USER_REGISTERED",
+      action: AUDIT_ACTIONS.USER_REGISTERED,
       entity: "User",
       entityId: user.id,
       ipAddress: ctx.ipAddress,
@@ -109,10 +110,10 @@ export const authService = {
     const record = await verificationTokenRepository.findValidByToken(token);
     if (!record) throw new AuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS, "Token inválido ou expirado.");
 
-    await userRepository.markEmailVerified(
-      (await userRepository.findByEmail(record.identifier))!.id,
-    );
+    const user = (await userRepository.findByEmail(record.identifier))!;
+    await userRepository.markEmailVerified(user.id);
     await verificationTokenRepository.deleteByToken(token);
+    await auditLogRepository.record({ userId: user.id, action: AUDIT_ACTIONS.EMAIL_VERIFIED });
   },
 
   async requestPasswordReset(email: string, ctx: RequestContext): Promise<void> {
@@ -143,7 +144,7 @@ export const authService = {
 
     await auditLogRepository.record({
       userId: user.id,
-      action: "PASSWORD_RESET_REQUESTED",
+      action: AUDIT_ACTIONS.PASSWORD_RESET_REQUESTED,
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
@@ -170,7 +171,7 @@ export const authService = {
 
     await auditLogRepository.record({
       userId: record.userId,
-      action: "PASSWORD_RESET_COMPLETED",
+      action: AUDIT_ACTIONS.PASSWORD_RESET_COMPLETED,
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
@@ -226,6 +227,18 @@ export const authService = {
           : null,
       );
       await fail("WRONG_PASSWORD");
+
+      // O bloqueio é evento de segurança por si só: quem investiga precisa vê-lo na trilha
+      // de ações, não apenas deduzi-lo contando tentativas na trilha de acessos.
+      if (shouldLock) {
+        await auditLogRepository.record({
+          userId: user.id,
+          action: AUDIT_ACTIONS.ACCOUNT_LOCKED,
+          metadata: { attempts, lockMinutes: AUTH_CONSTANTS.LOCK_DURATION_MINUTES },
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+        });
+      }
       throw new AuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS, "E-mail ou senha inválidos.");
     }
 

@@ -30,6 +30,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# pg_dump para o backup sob demanda do painel administrativo. A versão precisa acompanhar
+# a do servidor (Postgres 16): cliente mais antigo recusa dump de banco mais novo.
+RUN apk add --no-cache postgresql16-client
+
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public

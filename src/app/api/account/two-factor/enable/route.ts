@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { enableTwoFactorSchema } from "@/schemas/auth.schema";
 import { twoFactorService } from "@/services/two-factor.service";
 import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { AUDIT_ACTIONS } from "@/constants/audit";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
       parsed.data.secret,
       parsed.data.token,
     );
-    await auditLogRepository.record({ userId: session.user.id, action: "TWO_FACTOR_ENABLED" });
+    await auditLogRepository.record({ userId: session.user.id, action: AUDIT_ACTIONS.TWO_FACTOR_ENABLED });
     return NextResponse.json({ recoveryCodes });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });

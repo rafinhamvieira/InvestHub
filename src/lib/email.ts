@@ -158,6 +158,22 @@ export function alertEmailTemplate(message: string, assetUrl: string, ticker: st
   );
 }
 
+/**
+ * Aviso ao usuário de que um administrador mexeu na conta dele.
+ *
+ * Sai em toda ação administrativa, sem exceção e sem opção de desligar: é o que impede que
+ * alteração feita pelo painel passe despercebida pelo dono da conta. Se a mudança não foi
+ * combinada, o usuário fica sabendo na hora.
+ */
+export function adminActionEmailTemplate(action: string, detail: string): string {
+  return emailLayout(
+    "Alteração na sua conta",
+    `<p style="margin:0;"><strong>${action}</strong></p>
+     <p style="margin:12px 0 0;">${detail}</p>
+     <p style="margin:20px 0 0;color:#7A879C;font-size:13px;">Se você não reconhece esta alteração, entre em contato imediatamente e troque sua senha.</p>`,
+  );
+}
+
 export function passwordResetEmailTemplate(resetUrl: string): string {
   return emailLayout(
     "Redefinição de senha",

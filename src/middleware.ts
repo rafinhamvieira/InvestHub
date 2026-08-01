@@ -33,6 +33,22 @@ export default auth((req) => {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
+  // Área administrativa: primeira das duas barreiras.
+  //
+  // Aqui só dá para olhar o papel gravado no token, que é do momento do login e vale 30
+  // dias — um administrador rebaixado ontem ainda passaria por esta linha. Por isso cada
+  // rota chama `requireAdmin()`, que confere o papel no banco. Esta camada existe para
+  // evitar que a tela sequer carregue, e para o 403 sair antes de tocar o banco.
+  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+    const role = (req.auth?.user as { role?: string } | undefined)?.role;
+
+    if (!isLoggedIn || role !== "ADMIN") {
+      return isApiRoute
+        ? NextResponse.json({ error: "FORBIDDEN" }, { status: 403 })
+        : NextResponse.redirect(new URL("/dashboard", req.nextUrl.origin));
+    }
+  }
+
   if (isAuthPage && isLoggedIn) {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl.origin));
   }

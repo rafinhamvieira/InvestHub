@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/shared/logo";
 import { NAV_GROUPS } from "@/config/nav";
 
-export function Sidebar() {
+/**
+ * `isAdmin` chega do servidor, onde o papel é lido do banco. O link só decide o que
+ * aparece na tela: quem forjar o acesso a `/admin` ainda esbarra no middleware e no
+ * `requireAdmin()` de cada rota.
+ */
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -44,6 +50,26 @@ export function Sidebar() {
             </div>
           </div>
         ))}
+
+        {isAdmin && (
+          <div>
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Plataforma
+            </p>
+            <Link
+              href="/admin/audit"
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                pathname.startsWith("/admin")
+                  ? "bg-warning/10 text-warning"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              <ShieldCheck className="size-4" />
+              Painel de administração
+            </Link>
+          </div>
+        )}
       </nav>
     </aside>
   );
