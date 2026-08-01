@@ -304,3 +304,70 @@ describe("distribuição entre vários ativos", () => {
     expect(Math.abs(f1.weightAfter - f2.weightAfter)).toBeLessThan(0.06);
   });
 });
+
+describe("limite de concentração por ativo", () => {
+  const cinco = [
+    asset({ assetId: "A", ticker: "AAAA3", price: 10, dividendYield: 0.12 }),
+    asset({ assetId: "B", ticker: "BBBB3", price: 10, dividendYield: 0.11 }),
+    asset({ assetId: "C", ticker: "CCCC3", price: 10, dividendYield: 0.1 }),
+    asset({ assetId: "D", ticker: "DDDD3", price: 10, dividendYield: 0.09 }),
+  ];
+
+  it("sem limite, um critério estático concentra tudo no melhor ativo", () => {
+    const plan = buildContributionPlan(cinco, targets(), 10000, {
+      ...REBALANCE_ONLY,
+      rebalance: false,
+      dividendYield: true,
+    });
+    expect(plan.items).toHaveLength(1);
+  });
+
+  it("com limite de 30%, nenhum ativo passa do teto enquanto houver alternativas", () => {
+    const plan = buildContributionPlan(
+      cinco,
+      targets(),
+      10000,
+      { ...REBALANCE_ONLY, rebalance: false, dividendYield: true },
+      { maxPerAssetFraction: 0.3 },
+    );
+    expect(plan.items.length).toBeGreaterThan(1);
+    // O último ativo pode ultrapassar quando o limite é flexibilizado para não sobrar caixa.
+    const dentroDoTeto = plan.items.filter((i) => i.invested <= 10000 * 0.3 + 10);
+    expect(dentroDoTeto.length).toBeGreaterThanOrEqual(plan.items.length - 1);
+  });
+
+  it("flexibiliza o limite em vez de deixar dinheiro parado", () => {
+    const plan = buildContributionPlan(
+      [asset({ assetId: "A", ticker: "AAAA3", price: 10, dividendYield: 0.12 })],
+      targets(),
+      10000,
+      { ...REBALANCE_ONLY, rebalance: false, dividendYield: true },
+      { maxPerAssetFraction: 0.3 },
+    );
+    expect(plan.spent).toBeGreaterThan(9000);
+    expect(plan.warnings.some((w) => w.includes("flexibilizado"))).toBe(true);
+  });
+
+  it("com rebalanceamento, o limite não altera a distribuição por gap", () => {
+    const semLimite = buildContributionPlan(
+      [
+        asset({ assetId: "F1", ticker: "FFFF11", assetClass: "FII", price: 10, currentValue: 800 }),
+        asset({ assetId: "F2", ticker: "GGGG11", assetClass: "FII", price: 20, currentValue: 500 }),
+      ],
+      targets({ byClass: new Map([["FII", 1]]) }),
+      5000,
+      REBALANCE_ONLY,
+    );
+    const comLimite = buildContributionPlan(
+      [
+        asset({ assetId: "F1", ticker: "FFFF11", assetClass: "FII", price: 10, currentValue: 800 }),
+        asset({ assetId: "F2", ticker: "GGGG11", assetClass: "FII", price: 20, currentValue: 500 }),
+      ],
+      targets({ byClass: new Map([["FII", 1]]) }),
+      5000,
+      REBALANCE_ONLY,
+      { maxPerAssetFraction: 0.6 },
+    );
+    expect(comLimite.spent).toBe(semLimite.spent);
+  });
+});

@@ -15,6 +15,13 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -106,6 +113,7 @@ export function ContributionView() {
     safetyMargin: false,
     dividendYield: false,
   });
+  const [maxPerAsset, setMaxPerAsset] = useState("100");
   const [plan, setPlan] = useState<ContributionPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -118,7 +126,7 @@ export function ContributionView() {
     const response = await fetch("/api/contribution/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: Number(amount.replace(",", ".")), strategy }),
+      body: JSON.stringify({ amount: Number(amount.replace(",", ".")), strategy, maxPerAsset: Number(maxPerAsset) }),
     });
 
     setIsLoading(false);
@@ -149,8 +157,8 @@ export function ContributionView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="flex max-w-xs items-end gap-3">
-            <div className="flex-1 space-y-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-40 space-y-2">
               <Label htmlFor="amount">Valor do aporte (R$)</Label>
               <Input
                 id="amount"
@@ -160,11 +168,34 @@ export function ContributionView() {
                 onChange={(e) => setAmount(e.target.value)}
               />
             </div>
+
+            <div className="w-52 space-y-2">
+              <Label htmlFor="maxPerAsset">Máximo por ativo</Label>
+              <Select value={maxPerAsset} onValueChange={setMaxPerAsset}>
+                <SelectTrigger id="maxPerAsset">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="100">Sem limite</SelectItem>
+                  <SelectItem value="50">50% do aporte</SelectItem>
+                  <SelectItem value="40">40% do aporte</SelectItem>
+                  <SelectItem value="30">30% do aporte</SelectItem>
+                  <SelectItem value="20">20% do aporte</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <Button onClick={generatePlan} disabled={isLoading || !amount || !anyEnabled}>
               {isLoading ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Recomendar
             </Button>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            O limite é uma trava de segurança, não uma meta: com rebalanceamento ativo a
+            distribuição já sai do cálculo de quanto falta em cada ativo, e o teto raramente
+            chega a apertar.
+          </p>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {STRATEGY_OPTIONS.map((option) => (

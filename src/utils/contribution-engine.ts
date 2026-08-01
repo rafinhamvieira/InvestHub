@@ -266,11 +266,24 @@ function buildReasons(
   return reasons;
 }
 
+export interface ContributionOptions {
+  /**
+   * Teto de concentração por ativo, como fração do aporte (0,3 = 30%). 1 = sem limite.
+   *
+   * Serve de rede de proteção para estratégias que não se autoequilibram — com apenas
+   * "maior Dividend Yield", por exemplo, o melhor pagador continua sendo o melhor depois
+   * de cada compra e levaria o aporte inteiro. Com rebalanceamento o teto raramente
+   * aperta, porque a distribuição já sai do próprio cálculo de quanto falta em cada ativo.
+   */
+  maxPerAssetFraction?: number;
+}
+
 export function buildContributionPlan(
   assets: EngineAsset[],
   targets: TargetSet,
   amount: number,
   strategy: StrategyConfig,
+  options: ContributionOptions = {},
 ): ContributionPlan {
   const warnings: string[] = [];
 
@@ -326,17 +339,41 @@ export function buildContributionPlan(
   let remaining = amount;
   let iterations = 0;
 
+  const capFraction = options.maxPerAssetFraction ?? 1;
+  const cap = capFraction > 0 && capFraction < 1 ? capFraction * amount : Infinity;
+  // Se o teto travar tudo e ainda houver dinheiro (poucos ativos elegíveis), soltamos o
+  // limite e avisamos — deixar saldo parado seria pior do que exceder a concentração.
+  let capRelaxed = false;
+
   while (iterations++ < MAX_ITERATIONS) {
     let best: EngineAsset | null = null;
     let bestScore = -Infinity;
+    let blockedByCap = false;
 
     for (const asset of investable) {
       if (asset.price > remaining) continue;
+
+      if (!capRelaxed) {
+        const investedSoFar = (quantities.get(asset.assetId) ?? 0) * asset.price;
+        if (investedSoFar + asset.price > cap) {
+          blockedByCap = true;
+          continue;
+        }
+      }
+
       const { rank } = combinedScore(asset, targets, state, strategy);
       if (rank > bestScore || (rank === bestScore && best !== null && asset.price < best.price)) {
         best = asset;
         bestScore = rank;
       }
+    }
+
+    if (!best && blockedByCap && !capRelaxed) {
+      capRelaxed = true;
+      warnings.push(
+        `Não há ativos suficientes para respeitar o limite de ${Math.round(capFraction * 100)}% por ativo; o limite foi flexibilizado para aproveitar o aporte.`,
+      );
+      continue;
     }
 
     if (!best || bestScore <= 0) break;

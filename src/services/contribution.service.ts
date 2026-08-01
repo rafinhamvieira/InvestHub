@@ -121,6 +121,8 @@ export const contributionService = {
       }
     }
 
-    return buildContributionPlan(engineAssets, targetSet, request.amount, request.strategy);
+    return buildContributionPlan(engineAssets, targetSet, request.amount, request.strategy, {
+      maxPerAssetFraction: request.maxPerAsset / 100,
+    });
   },
 };

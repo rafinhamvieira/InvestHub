@@ -58,6 +58,11 @@ export const contributionRequestSchema = z.object({
       safetyMargin: false,
       dividendYield: false,
     }),
+  /**
+   * Percentual máximo do aporte em um único ativo. 100 = sem limite.
+   * Rede de proteção para estratégias que não se autoequilibram (ex: só Dividend Yield).
+   */
+  maxPerAsset: z.coerce.number().min(5).max(100).default(100),
 });
 
 export type ContributionRequest = z.infer<typeof contributionRequestSchema>;
