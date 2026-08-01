@@ -233,6 +233,13 @@ model Asset {
   logoUrl     String?
   currency    String    @default("BRL")
   isActive    Boolean   @default(true)
+
+  /// Quando a fila de rotação tentou buscar fundamentos/proventos deste ativo — sucesso
+  /// ou não. Sem isso, ativo que a fonte não cobre (BDR no provedor de fundamentos, por
+  /// exemplo) volta ao início da fila para sempre e consome a cota do dia sem entregar nada.
+  fundamentalsCheckedAt DateTime?
+  dividendsCheckedAt    DateTime?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

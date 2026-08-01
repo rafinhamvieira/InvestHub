@@ -165,6 +165,9 @@ export const dividendSyncService = {
     try {
       const assets = await assetRepository.listStaleDividends(limit, ["STOCK", "FII", "BDR"]);
       const report = await this.syncAssets(assets);
+      // Carimba a tentativa mesmo sem provento novo: ativo que não paga nada não pode
+      // ficar preso no início da fila bloqueando o resto do catálogo.
+      await assetRepository.markDividendsChecked(assets.map((asset) => asset.id));
       return report.created;
     } catch (error) {
       logger.error("Falha na rotação de proventos", { error: (error as Error).message });

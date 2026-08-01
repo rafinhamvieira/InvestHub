@@ -204,11 +204,14 @@ export const marketSyncService = {
     if (limit <= 0 || !getFundamentalsProvider()) return 0;
 
     try {
-      const assets = await assetRepository.listStaleFundamentals(limit, ["STOCK", "FII", "BDR"]);
+      // BDR fica de fora: o provedor não cobre nenhum deles, e são 675 ativos que só
+      // consumiriam a cota diária sem devolver indicador nenhum.
+      const assets = await assetRepository.listStaleFundamentals(limit, ["STOCK", "FII"]);
       let updated = 0;
       for (const asset of assets) {
         if (await fetchAndStoreFundamentals(asset)) updated++;
       }
+      await assetRepository.markFundamentalsChecked(assets.map((asset) => asset.id));
       return updated;
     } catch (error) {
       logger.error("Falha na rotação de fundamentos", { error: (error as Error).message });

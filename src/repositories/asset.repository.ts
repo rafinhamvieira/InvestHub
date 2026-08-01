@@ -47,21 +47,24 @@ export const assetRepository = {
    *
    * O provedor cobra por ticker e o plano gratuito dá 200 chamadas por dia — varrer os
    * ~2000 ativos do catálogo a cada ciclo é impossível. A ordem da fila é o que decide se
-   * a rotação é útil ou não:
+   * a rotação é útil:
    *
-   *  1. quem ainda não tem indicador de verdade (o snapshot do catálogo traz só preço,
-   *     liquidez e valor de mercado — `pl` nulo é a marca disso);
-   *  2. entre esses, os mais líquidos primeiro, que são os que alguém vai filtrar no
-   *     screener — não adianta gastar a cota do dia em papel que ninguém negocia;
-   *  3. depois que todos têm indicador, a ordem vira "mais antigo primeiro" e a base passa
-   *     a se renovar sozinha.
+   *  1. quem nunca foi tentado (`fundamentalsCheckedAt` nulo);
+   *  2. entre esses, os mais líquidos primeiro — são os que alguém vai filtrar no screener,
+   *     e não adianta gastar a cota do dia em papel que ninguém negocia;
+   *  3. depois que todos foram tentados, a ordem vira "tentado há mais tempo" e a base
+   *     passa a se renovar sozinha.
+   *
+   * O marcador é a **tentativa**, não o resultado: o provedor não cobre parte do mercado
+   * (BDR inteiro, nomes pequenos) e usar a presença do indicador como critério prendia
+   * esses ativos no início da fila para sempre.
    */
   listStaleFundamentals(limit: number, types: AssetType[]) {
     return prisma.$queryRaw<Array<{ id: string; ticker: string; type: AssetType }>>`
       SELECT a.id, a.ticker, a.type
       FROM assets a
       LEFT JOIN LATERAL (
-        SELECT f.pl, f.liquidity, f."referenceDate"
+        SELECT f.liquidity
         FROM asset_fundamentals f
         WHERE f."assetId" = a.id
         ORDER BY f."referenceDate" DESC
@@ -69,11 +72,27 @@ export const assetRepository = {
       ) latest ON true
       WHERE a."isActive" = true
         AND a.type::text = ANY(${types})
-      ORDER BY (latest.pl IS NOT NULL) ASC,
-               latest."referenceDate" ASC NULLS FIRST,
+      ORDER BY a."fundamentalsCheckedAt" ASC NULLS FIRST,
                COALESCE(latest.liquidity, 0) DESC
       LIMIT ${limit}
     `;
+  },
+
+  /** Carimba a tentativa de busca, com ou sem dado devolvido pela fonte. */
+  markFundamentalsChecked(assetIds: string[]) {
+    if (assetIds.length === 0) return Promise.resolve({ count: 0 });
+    return prisma.asset.updateMany({
+      where: { id: { in: assetIds } },
+      data: { fundamentalsCheckedAt: new Date() },
+    });
+  },
+
+  markDividendsChecked(assetIds: string[]) {
+    if (assetIds.length === 0) return Promise.resolve({ count: 0 });
+    return prisma.asset.updateMany({
+      where: { id: { in: assetIds } },
+      data: { dividendsCheckedAt: new Date() },
+    });
   },
 
   /**
@@ -88,11 +107,6 @@ export const assetRepository = {
       SELECT a.id, a.ticker, a.type
       FROM assets a
       LEFT JOIN LATERAL (
-        SELECT MAX(d."createdAt") AS last_at
-        FROM asset_dividends d
-        WHERE d."assetId" = a.id
-      ) dividends ON true
-      LEFT JOIN LATERAL (
         SELECT f.liquidity
         FROM asset_fundamentals f
         WHERE f."assetId" = a.id
@@ -101,7 +115,7 @@ export const assetRepository = {
       ) latest ON true
       WHERE a."isActive" = true
         AND a.type::text = ANY(${types})
-      ORDER BY dividends.last_at ASC NULLS FIRST,
+      ORDER BY a."dividendsCheckedAt" ASC NULLS FIRST,
                COALESCE(latest.liquidity, 0) DESC
       LIMIT ${limit}
     `;
