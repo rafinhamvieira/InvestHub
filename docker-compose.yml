@@ -33,7 +33,8 @@ services:
     build:
       context: .
       target: builder
-    command: sh -c "npx prisma migrate deploy"
+    # Binário local pelo mesmo motivo do Dockerfile: migração não pode depender de DNS.
+    command: sh -c "./node_modules/.bin/prisma migrate deploy"
     env_file: .env
     # Bind mount para que migrações geradas no servidor (prisma migrate dev) persistam no host.
     volumes:

@@ -19,7 +19,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # chega no clone e o COPY do estágio runner falha. Garantir a pasta aqui torna o build
 # independente disso.
 RUN mkdir -p /app/public
-RUN npx prisma generate
+# Binário local, não `npx`: o npx consulta o registry quando não resolve o pacote de cara,
+# e um build que depende de DNS quebra por motivo que nada tem a ver com o código.
+RUN ./node_modules/.bin/prisma generate
 RUN npm run build
 
 # ---------- runner ----------
