@@ -4,8 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { DatabaseBackup, Download, Loader2, ShieldAlert } from "lucide-react";
 import { extractApiError } from "@/utils/api-error";
-import { formatBytes } from "@/utils/backup-file";
-import type { BackupFile } from "@/services/admin-backup.service";
+import { formatBytes } from "@/utils/format";
+import type { BackupFile } from "@/types/admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {

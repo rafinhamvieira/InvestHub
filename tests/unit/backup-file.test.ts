@@ -1,11 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  buildBackupName,
-  formatBytes,
-  isValidBackupName,
-  resolveBackupPath,
-} from "@/utils/backup-file";
+import { buildBackupName, isValidBackupName, resolveBackupPath } from "@/utils/backup-file";
+import { formatBytes } from "@/utils/format";
 
 const DIR = path.resolve("/backups");
 

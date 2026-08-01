@@ -17,12 +17,7 @@ import { createGzip } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { logger } from "@/lib/logger";
 import { buildBackupName, resolveBackupPath } from "@/utils/backup-file";
-
-export interface BackupFile {
-  name: string;
-  sizeBytes: number;
-  createdAt: string;
-}
+import type { BackupFile } from "@/types/admin";
 
 export class BackupError extends Error {
   constructor(

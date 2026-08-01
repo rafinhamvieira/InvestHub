@@ -10,6 +10,10 @@
  *
  * A segunda existe porque a primeira depende de a expressão estar certa — e expressão
  * regular é justamente o tipo de coisa que envelhece mal.
+ *
+ * **Módulo de servidor.** Importa `node:path`, então não pode ser puxado por componente de
+ * tela: o empacotador do navegador não resolve `node:` e o build quebra. Formatação de
+ * tamanho de arquivo, que a tela precisa, mora em `utils/format.ts`.
  */
 
 import path from "node:path";
@@ -48,14 +52,3 @@ export function buildBackupName(reference = new Date()): string {
   return `investhub-manual-${stamp}.sql.gz`;
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${units[unit]}`;
-}
