@@ -107,6 +107,26 @@ export const assetDividendRepository = {
     });
   },
 
+  /**
+   * Soma dos proventos por cota dos últimos 12 meses, por ativo.
+   * Base do Dividend Yield calculado localmente quando o provedor de fundamentos não
+   * cobre o ativo — o histórico de proventos vem de fonte gratuita, o DY dele não.
+   */
+  async sumLast12mByAsset(assetIds: string[], reference = new Date()): Promise<Map<string, number>> {
+    if (assetIds.length === 0) return new Map();
+
+    const since = new Date(reference);
+    since.setUTCFullYear(since.getUTCFullYear() - 1);
+
+    const rows = await prisma.assetDividend.groupBy({
+      by: ["assetId"],
+      where: { assetId: { in: assetIds }, exDate: { gte: since, lte: reference } },
+      _sum: { valuePerShare: true },
+    });
+
+    return new Map(rows.map((row) => [row.assetId, Number(row._sum.valuePerShare ?? 0)]));
+  },
+
   /** Quando o provento mais recente entrou na base — exibido como "última atualização". */
   async lastImportedAt(assetIds: string[]): Promise<Date | null> {
     if (assetIds.length === 0) return null;

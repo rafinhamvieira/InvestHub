@@ -38,6 +38,15 @@ interface SyncTarget {
  */
 const FUNDAMENTALS_PER_CYCLE = Number(process.env.FUNDAMENTALS_PER_CYCLE ?? 4);
 
+/**
+ * Quantos ativos têm os proventos importados por ciclo, fora os que alguém acompanha.
+ *
+ * As fontes são gratuitas, então o limite aqui é educação com quem hospeda os dados: 10
+ * por ciclo são 20 requisições a cada 30 min. Cobre o catálogo em algumas semanas e dá
+ * Dividend Yield ao screener sem depender do provedor pago.
+ */
+const DIVIDENDS_PER_CYCLE = Number(process.env.DIVIDENDS_PER_CYCLE ?? 10);
+
 /** Backfill de histórico quando o ativo tem menos de 2 candles nos últimos 7 dias. */
 const HISTORY_STALE_DAYS = 7;
 const HISTORY_MIN_RECENT = 2;
@@ -220,6 +229,7 @@ export const marketSyncService = {
     const report = await this.syncAssets(assets);
     report.assetsCreated += catalog.assetsCreated;
     report.fundamentalsUpdated += await this.refreshStaleFundamentals();
+    report.dividendsUpserted += await dividendSyncService.syncStale(DIVIDENDS_PER_CYCLE);
     return report;
   },
 

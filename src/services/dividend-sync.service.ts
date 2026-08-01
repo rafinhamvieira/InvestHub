@@ -17,6 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { sendEmail, alertEmailTemplate } from "@/lib/email";
+import { assetRepository } from "@/repositories/asset.repository";
 import { assetDividendRepository, type StoredDividend } from "@/repositories/asset-dividend.repository";
 import { dividendReceiptRepository } from "@/repositories/dividend-receipt.repository";
 import { notificationRepository } from "@/repositories/notification.repository";
@@ -148,6 +149,27 @@ export const dividendSyncService = {
 
     report.notified = await this.notifyDeclarations(fresh);
     return report;
+  },
+
+  /**
+   * Importa proventos de um punhado de ativos do catálogo por ciclo, priorizando quem não
+   * tem nenhum e, entre esses, os mais líquidos.
+   *
+   * É o que dá Dividend Yield ao screener sem plano pago: com o histórico na base, o yield
+   * sai de uma conta local em vez de vir do provedor de fundamentos, que é limitado a 200
+   * chamadas por dia.
+   */
+  async syncStale(limit: number): Promise<number> {
+    if (limit <= 0) return 0;
+
+    try {
+      const assets = await assetRepository.listStaleDividends(limit, ["STOCK", "FII", "BDR"]);
+      const report = await this.syncAssets(assets);
+      return report.created;
+    } catch (error) {
+      logger.error("Falha na rotação de proventos", { error: (error as Error).message });
+      return 0;
+    }
   },
 
   /** Sincroniza os proventos de todos os ativos que alguém tem em carteira. */

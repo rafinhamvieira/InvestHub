@@ -2,6 +2,7 @@ import { screenerRepository } from "@/repositories/screener.repository";
 import { assetFundamentalRepository } from "@/repositories/asset-fundamental.repository";
 import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { watchlistRepository } from "@/repositories/watchlist.repository";
+import { assetDividendRepository } from "@/repositories/asset-dividend.repository";
 import { scoreService } from "@/services/score.service";
 import type { ScreenerRow } from "@/types/screener";
 import type { AssetFundamental } from "@prisma/client";
@@ -12,15 +13,19 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function loadBase(userId: string, types: Parameters<typeof screenerRepository.findAssetsByTypes>[0]) {
+async function loadBase(
+  userId: string,
+  types: Parameters<typeof screenerRepository.findAssetsByTypes>[0],
+) {
   const assets = await screenerRepository.findAssetsByTypes(types);
   const assetIds = assets.map((a) => a.id);
 
-  const [fundamentals, prices, favorites, scores] = await Promise.all([
+  const [fundamentals, prices, favorites, scores, dividends12m] = await Promise.all([
     assetFundamentalRepository.findLatestByAssetIds(assetIds),
     assetPriceRepository.findLatestByAssetIds(assetIds),
     watchlistRepository.listAssetIds(userId),
     scoreService.scoreAssets(userId, assetIds),
+    assetDividendRepository.sumLast12mByAsset(assetIds),
   ]);
 
   return {
@@ -29,15 +34,30 @@ async function loadBase(userId: string, types: Parameters<typeof screenerReposit
     priceMap: new Map(prices.map((p) => [p.assetId, Number(p.close)])),
     favorites,
     scores,
+    dividends12m,
   };
+}
+
+/**
+ * DY do provedor de fundamentos; quando ele não cobre o ativo, calcula pelo histórico de
+ * proventos — que vem de fonte gratuita e cobre muito mais gente. Em percentual.
+ */
+function resolveDy(
+  providerDy: number | null,
+  price: number | null,
+  dividends12m: number | undefined,
+): number | null {
+  if (providerDy !== null) return providerDy;
+  if (!price || price <= 0 || !dividends12m) return null;
+  return (dividends12m / price) * 100;
 }
 
 export const screenerService = {
   async getStockScreener(userId: string): Promise<ScreenerRow[]> {
-    const { assets, fundamentalMap, priceMap, favorites, scores } = await loadBase(userId, [
-      "STOCK",
-      "BDR",
-    ]);
+    const { assets, fundamentalMap, priceMap, favorites, scores, dividends12m } = await loadBase(
+      userId,
+      ["STOCK", "BDR"],
+    );
 
     return assets.map((asset) => {
       const f = fundamentalMap.get(asset.id);
@@ -52,7 +72,11 @@ export const screenerService = {
         price: priceMap.get(asset.id) ?? num(f?.price),
         pl: num(f?.pl),
         pvp: num(f?.pvp),
-        dy: num(f?.dividendYield),
+        dy: resolveDy(
+          num(f?.dividendYield),
+          priceMap.get(asset.id) ?? num(f?.price),
+          dividends12m.get(asset.id),
+        ),
         roe: num(f?.roe),
         roic: num(f?.roic),
         netMargin: num(f?.netMargin),
@@ -73,7 +97,10 @@ export const screenerService = {
   },
 
   async getFiiScreener(userId: string): Promise<ScreenerRow[]> {
-    const { assets, fundamentalMap, priceMap, favorites, scores } = await loadBase(userId, ["FII"]);
+    const { assets, fundamentalMap, priceMap, favorites, scores, dividends12m } = await loadBase(
+      userId,
+      ["FII"],
+    );
 
     return assets.map((asset) => {
       const f = fundamentalMap.get(asset.id);
@@ -85,7 +112,11 @@ export const screenerService = {
         score: scores.get(asset.id)?.score ?? null,
         segment: asset.segment ?? asset.sector,
         price: priceMap.get(asset.id) ?? num(f?.price),
-        dy: num(f?.dividendYield),
+        dy: resolveDy(
+          num(f?.dividendYield),
+          priceMap.get(asset.id) ?? num(f?.price),
+          dividends12m.get(asset.id),
+        ),
         pvp: num(f?.pvp),
         vacancy: num(f?.vacancy),
         liquidity: num(f?.liquidity),
