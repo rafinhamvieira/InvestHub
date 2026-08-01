@@ -40,6 +40,22 @@ export function toDateInputValue(value: string | Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Dia útil anterior (ignora sábado e domingo; feriados não entram na conta).
+ *
+ * Usado para converter data-ex em data-com: quem quer o provento precisa ter o ativo no
+ * fechamento do pregão anterior ao ex. Sem isso, um provento com ex numa segunda seria
+ * comparado com a custódia de domingo — dia em que não há pregão nem posição nova.
+ */
+export function previousBusinessDay(value: Date): Date {
+  const date = toUtcDateOnly(value);
+  date.setUTCDate(date.getUTCDate() - 1);
+  while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
+    date.setUTCDate(date.getUTCDate() - 1);
+  }
+  return date;
+}
+
 /** Ano do calendário em UTC — usado para agrupar proventos por ano. */
 export function getUtcYear(value: string | Date): number {
   const date = typeof value === "string" ? new Date(value) : value;

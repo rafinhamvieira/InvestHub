@@ -11,6 +11,20 @@ export const positionRepository = {
     });
   },
 
+  /** Quem tem posição aberta nestes ativos — base para notificar proventos. */
+  findHoldersOfAssets(assetIds: string[]) {
+    if (assetIds.length === 0) return Promise.resolve([]);
+    return prisma.position.findMany({
+      where: { assetId: { in: assetIds }, quantity: { gt: 0 } },
+      select: {
+        userId: true,
+        assetId: true,
+        quantity: true,
+        user: { select: { email: true, emailNotifications: true } },
+      },
+    });
+  },
+
   upsert(userId: string, assetId: string, data: { quantity: number; averagePrice: number; totalInvested: number }) {
     return prisma.position.upsert({
       where: { userId_assetId: { userId, assetId } },

@@ -34,6 +34,28 @@ export const transactionRepository = {
     });
   },
 
+  /**
+   * Ledger de vários usuários para um conjunto de ativos.
+   * Usado ao creditar proventos: a quantidade que vale é a da data-com, e só o ledger
+   * responde isso — a posição consolidada guarda apenas o saldo de hoje.
+   */
+  findLedgerForAssets(userIds: string[], assetIds: string[]) {
+    if (userIds.length === 0 || assetIds.length === 0) return Promise.resolve([]);
+    return prisma.transaction.findMany({
+      where: { userId: { in: userIds }, assetId: { in: assetIds } },
+      select: {
+        userId: true,
+        assetId: true,
+        type: true,
+        quantity: true,
+        price: true,
+        fees: true,
+        date: true,
+      },
+      orderBy: { date: "asc" },
+    });
+  },
+
   findAllByUserAndAsset(userId: string, assetId: string) {
     return prisma.transaction.findMany({
       where: { userId, assetId },

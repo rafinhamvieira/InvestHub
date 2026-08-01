@@ -6,6 +6,7 @@ import {
   Search,
   Building2,
   Coins,
+  HandCoins,
   Star,
   Bell,
   Settings,
@@ -31,6 +32,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Carteira",
     items: [
       { title: "Minha Carteira", href: "/portfolio", icon: Wallet },
+      { title: "Proventos", href: "/dividends", icon: HandCoins },
       { title: "Recomendação de Aporte", href: "/contribution", icon: Coins },
       { title: "Alocação", href: "/allocation", icon: PieChart },
     ],

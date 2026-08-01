@@ -31,8 +31,11 @@ export interface MarketOhlcBar {
 export interface MarketDividend {
   type: string;
   valuePerShare: number;
+  /** Data-com: último dia em que quem tinha o ativo garantiu o provento. */
   exDate: Date;
   paymentDate: Date | null;
+  /** Data de aprovação/anúncio, quando a fonte informa. */
+  declaredAt?: Date | null;
 }
 
 /** Item do catálogo completo do mercado, obtido em uma única requisição. */

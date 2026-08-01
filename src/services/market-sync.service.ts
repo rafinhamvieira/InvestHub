@@ -6,6 +6,7 @@ import { assetPriceRepository } from "@/repositories/asset-price.repository";
 import { assetFundamentalRepository } from "@/repositories/asset-fundamental.repository";
 import { assetDividendRepository } from "@/repositories/asset-dividend.repository";
 import { alertService } from "@/services/alert.service";
+import { dividendSyncService } from "@/services/dividend-sync.service";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -15,6 +16,8 @@ export interface SyncReport {
   assetsCreated: number;
   historyBackfilled: number;
   dividendsUpserted: number;
+  /** Proventos com pagamento hoje que viraram recibo e notificação. */
+  dividendsCredited: number;
   failedTickers: string[];
   alertsTriggered: number;
 }
@@ -84,6 +87,7 @@ export const marketSyncService = {
       assetsCreated: 0,
       historyBackfilled: 0,
       dividendsUpserted: 0,
+      dividendsCredited: 0,
       failedTickers: [],
       alertsTriggered: 0,
     };
@@ -189,8 +193,21 @@ export const marketSyncService = {
     }
 
     // ------------------------------------------------------------
-    // 3. Dividendos (depende do plano do provedor de cotações).
+    // 3. Proventos — B3 (anunciados) + Yahoo (histórico), fontes públicas.
+    //
+    // O provedor de cotações entra só como reforço: no plano gratuito ele não devolve
+    // dividendo nenhum, e quando devolve já vem sem data de pagamento. Notificação de
+    // declaração e crédito saem do dividendSyncService.
     // ------------------------------------------------------------
+    try {
+      const dividendReport = await dividendSyncService.syncAssets(
+        assets.map((asset) => ({ id: asset.id, ticker: asset.ticker, type: asset.type })),
+      );
+      report.dividendsUpserted += dividendReport.created;
+    } catch (error) {
+      logger.warn("Falha ao sincronizar proventos", { error: (error as Error).message });
+    }
+
     for (const asset of assets) {
       if (!catalogByTicker.has(asset.ticker)) continue;
       try {
@@ -200,7 +217,7 @@ export const marketSyncService = {
           if (created) report.dividendsUpserted++;
         }
       } catch (error) {
-        logger.warn("Falha ao sincronizar dividendos", {
+        logger.warn("Falha ao sincronizar dividendos do provedor de cotações", {
           ticker: asset.ticker,
           error: (error as Error).message,
         });
@@ -231,7 +248,18 @@ export const marketSyncService = {
     }
 
     // ------------------------------------------------------------
-    // 5. Reavalia alertas com os dados novos.
+    // 5. Credita proventos cuja data de pagamento é hoje.
+    // Idempotente: o recibo é único por usuário e provento, então rodar de novo no mesmo
+    // dia não duplica notificação nem valor.
+    // ------------------------------------------------------------
+    try {
+      report.dividendsCredited = await dividendSyncService.notifyPayments();
+    } catch (error) {
+      logger.error("Falha ao creditar proventos do dia", { error: (error as Error).message });
+    }
+
+    // ------------------------------------------------------------
+    // 6. Reavalia alertas com os dados novos.
     // ------------------------------------------------------------
     try {
       report.alertsTriggered = await alertService.evaluate(userId);
