@@ -10,14 +10,14 @@ import {
   LockOpen,
   Mail,
   Search,
-  ShieldMinus,
   ShieldOff,
   ShieldPlus,
   UserPen,
 } from "lucide-react";
 import { extractApiError } from "@/utils/api-error";
 import type { AdminUserPage, AdminUserRow } from "@/types/audit";
-import { hasAdminAccess } from "@/lib/permissions";
+import { hasAdminAccess, ROLE_LABELS } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -48,8 +48,7 @@ type Action =
   | "SEND_PASSWORD_RESET"
   | "RESET_TWO_FACTOR"
   | "UNLOCK"
-  | "GRANT_ADMIN"
-  | "REVOKE_ADMIN";
+  | "SET_ROLE";
 
 interface PendingAction {
   user: AdminUserRow;
@@ -68,11 +67,13 @@ const REQUIRES_REASON = new Set<Action>([
   "SEND_PASSWORD_RESET",
   "RESET_TWO_FACTOR",
   "UNLOCK",
-  "GRANT_ADMIN",
-  "REVOKE_ADMIN",
+  "SET_ROLE",
 ]);
 
 const REASON_MIN_LENGTH = 10;
+
+/** Ordem do menos para o mais poderoso — a lista é lida de cima para baixo. */
+const ROLE_OPTIONS: Role[] = ["USER", "READ_ONLY", "AUDITOR", "SUPPORT", "ADMIN", "SUPER_ADMIN"];
 
 const ACTION_COPY: Record<Action, { title: string; description: string; confirm: string }> = {
   RENAME: {
@@ -103,16 +104,11 @@ const ACTION_COPY: Record<Action, { title: string; description: string; confirm:
     description: "Zera as tentativas falhas e libera o acesso imediatamente.",
     confirm: "Desbloquear",
   },
-  GRANT_ADMIN: {
-    title: "Conceder permissão de administrador",
+  SET_ROLE: {
+    title: "Alterar cargo",
     description:
-      "O usuário passa a ver a auditoria de toda a plataforma e a lista de usuários, e a agir sobre contas. Não alcança backup nem qualquer dado de carteira. Vale a partir do próximo login dele.",
-    confirm: "Conceder acesso",
-  },
-  REVOKE_ADMIN: {
-    title: "Remover permissão de administrador",
-    description: "O usuário perde o acesso ao painel imediatamente.",
-    confirm: "Remover acesso",
+      "O que cada cargo alcança está em Cargos. Nenhum deles enxerga carteira de usuário. A mudança vale na hora para as rotas, e a partir do próximo login para o menu.",
+    confirm: "Alterar cargo",
   },
 };
 
@@ -120,11 +116,14 @@ export function UsersView({
   initial,
   currentAdminId,
   adminTwoFactorEnabled,
+  canManageRoles,
 }: {
   initial: AdminUserPage;
   currentAdminId: string;
   /** Do próprio administrador: decide se a confirmação pede o código do app. */
   adminTwoFactorEnabled: boolean;
+  /** `MANAGE_ROLES`: sem ela o botão de cargo não aparece, e a rota recusa de qualquer forma. */
+  canManageRoles: boolean;
 }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
@@ -153,7 +152,8 @@ export function UsersView({
 
   function openAction(user: AdminUserRow, action: Action) {
     setPending({ user, action });
-    setInputValue(action === "RENAME" ? (user.name ?? "") : "");
+    // O cargo abre já no atual: a troca é uma escolha entre seis, não um campo em branco.
+    setInputValue(action === "RENAME" ? (user.name ?? "") : action === "SET_ROLE" ? user.role : "");
     setReason("");
   }
 
@@ -175,6 +175,7 @@ export function UsersView({
     const body: Record<string, unknown> = { action: pending.action };
     if (pending.action === "RENAME") body.name = inputValue;
     if (pending.action === "CHANGE_EMAIL") body.email = inputValue;
+    if (pending.action === "SET_ROLE") body.role = inputValue;
     if (REQUIRES_REASON.has(pending.action)) body.reason = reason.trim();
 
     const response = await fetch(`/api/admin/users/${pending.user.id}`, {
@@ -301,28 +302,19 @@ export function UsersView({
                     <Button variant="ghost" size="sm" title="Desbloquear conta" disabled={!user.lockedUntil} onClick={() => openAction(user, "UNLOCK")}>
                       <LockOpen className="size-4" />
                     </Button>
-                    {hasAdminAccess(user) ? (
+                    {canManageRoles && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        // O próprio admin não pode se rebaixar: sem isso, o único
-                        // administrador se tranca para fora do painel sem volta.
+                        // Sobre si mesmo o cargo não muda por aqui: o único dono se trancaria
+                        // para fora do painel sem caminho de volta pela interface.
                         disabled={user.id === currentAdminId}
                         title={
                           user.id === currentAdminId
-                            ? "Você não pode remover a sua própria permissão"
-                            : "Remover permissão de administrador"
+                            ? "Você não pode alterar o seu próprio cargo"
+                            : "Alterar cargo"
                         }
-                        onClick={() => openAction(user, "REVOKE_ADMIN")}
-                      >
-                        <ShieldMinus className="size-4" />
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Conceder permissão de administrador"
-                        onClick={() => openAction(user, "GRANT_ADMIN")}
+                        onClick={() => openAction(user, "SET_ROLE")}
                       >
                         <ShieldPlus className="size-4" />
                       </Button>
@@ -376,6 +368,27 @@ export function UsersView({
                     value={inputValue}
                     onChange={(event) => setInputValue(event.target.value)}
                   />
+                </div>
+              )}
+
+              {pending.action === "SET_ROLE" && (
+                <div className="space-y-2">
+                  <Label htmlFor="action-role">Cargo</Label>
+                  <select
+                    id="action-role"
+                    className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+                    value={inputValue}
+                    onChange={(event) => setInputValue(event.target.value)}
+                  >
+                    {ROLE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {ROLE_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Cargo atual: {ROLE_LABELS[pending.user.role]}.
+                  </p>
                 </div>
               )}
 

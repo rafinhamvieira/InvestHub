@@ -119,13 +119,16 @@ export function LogsView({ initial }: { initial: AppLogPage }) {
       </Card>
 
       {data.sizeBytes === null && (
-        <Card className="border-warning/40 bg-warning/5">
+        <Card>
           <CardContent className="flex gap-3 p-4">
-            <FileText className="mt-0.5 size-4 shrink-0 text-warning" />
+            <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Nenhum arquivo de log encontrado. Ou o volume não está montado, ou a pasta não
-              tem permissão de escrita para o usuário da aplicação (uid 1001). Enquanto isso,
-              o log continua saindo em <code className="rounded bg-muted px-1">docker compose logs app</code>.
+              O arquivo de log ainda não existe. Ele nasce na primeira linha registrada, e a
+              maioria das chamadas de log está em caminho de erro — numa aplicação quieta,
+              isso é o estado normal. Se continuar vazio depois de uma sincronização, confira
+              se a pasta <code className="rounded bg-muted px-1">./logs</code> pertence ao uid
+              1001. De qualquer forma, o log segue saindo em{" "}
+              <code className="rounded bg-muted px-1">docker compose logs app</code>.
             </p>
           </CardContent>
         </Card>

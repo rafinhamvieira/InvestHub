@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import {
   FINANCIAL_EXPOSURE_PERMISSIONS,
   Permission,
+  ROLE_LABELS,
   ROLE_PERMISSIONS,
   adminRoles,
   can,
   hasAdminAccess,
+  isOwnerRole,
 } from "@/lib/permissions";
 import { ADMIN_NAV } from "@/config/admin-nav";
 import type { Role } from "@prisma/client";
@@ -116,6 +118,30 @@ describe("acesso a dado financeiro", () => {
     expect(can(admin, Permission.MANAGE_PLATFORM)).toBe(true);
     expect(can(admin, Permission.MANAGE_BACKUPS)).toBe(false);
     expect(can(admin, Permission.RESTORE_BACKUP)).toBe(false);
+  });
+});
+
+describe("cargo que responde pela plataforma", () => {
+  it("é exatamente um, e detém todas as permissões", () => {
+    const donos = ROLES.filter(isOwnerRole);
+
+    expect(donos).toEqual(["SUPER_ADMIN"]);
+    expect(ROLE_PERMISSIONS.SUPER_ADMIN.length).toBe(Object.values(Permission).length);
+  });
+
+  it("permissão nova sem dono faria o teste falhar em vez de passar despercebida", () => {
+    // `isOwnerRole` compara contra o total de permissões: se alguém acrescentar uma e
+    // esquecer de dar ao cargo mais alto, ele deixa de ser dono e a regra do último dono
+    // — que impede trancar todo mundo do lado de fora — pararia de valer em silêncio.
+    for (const permission of Object.values(Permission)) {
+      expect(ROLE_PERMISSIONS.SUPER_ADMIN).toContain(permission);
+    }
+  });
+
+  it("todo cargo tem rótulo em português", () => {
+    for (const role of ROLES) {
+      expect(ROLE_LABELS[role]).toBeTruthy();
+    }
   });
 });
 

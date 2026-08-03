@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requirePermission } from "@/lib/auth-guard";
-import { Permission } from "@/lib/permissions";
+import { can, Permission } from "@/lib/permissions";
 import { adminUserService } from "@/services/admin-user.service";
 import { UsersView } from "@/components/admin/users-view";
 
@@ -23,6 +23,7 @@ export default async function AdminUsersPage() {
       initial={initial}
       currentAdminId={admin.id}
       adminTwoFactorEnabled={admin.twoFactorEnabled}
+      canManageRoles={can(admin, Permission.MANAGE_ROLES)}
     />
   );
 }

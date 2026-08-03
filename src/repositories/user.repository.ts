@@ -63,6 +63,10 @@ export const userRepository = {
     });
   },
 
+  countByRole(role: Role): Promise<number> {
+    return prisma.user.count({ where: { role } });
+  },
+
   setRole(userId: string, role: Role): Promise<User> {
     return prisma.user.update({ where: { id: userId }, data: { role } });
   },

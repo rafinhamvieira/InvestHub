@@ -117,6 +117,17 @@ export function isPrivilegedRole(role: Role): boolean {
   return (ROLE_PERMISSIONS[role]?.length ?? 0) > 0;
 }
 
+/**
+ * Cargo que detém **todas** as permissões — quem responde pela plataforma.
+ *
+ * Derivado do mapa, e não escrito à mão: permissão nova entra em `Object.values(Permission)`
+ * e o cargo que não a receber deixa de ser dono, sem ninguém precisar lembrar deste ponto.
+ * É o que sustenta a regra de não rebaixar a última conta que sobrou nesse posto.
+ */
+export function isOwnerRole(role: Role): boolean {
+  return ROLE_PERMISSIONS[role]?.length === Object.values(Permission).length;
+}
+
 /** Alguma permissão administrativa — decide se o item do painel aparece no menu. */
 export function hasAdminAccess(principal: Principal | null | undefined): boolean {
   if (!principal) return false;

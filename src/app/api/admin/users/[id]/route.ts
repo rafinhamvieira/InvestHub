@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission, requireStepUp, authorizationStatus } from "@/lib/auth-guard";
-import { Permission } from "@/lib/permissions";
+import { can, Permission } from "@/lib/permissions";
 import { adminUserService, AdminActionError } from "@/services/admin-user.service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getClientIp, getUserAgent } from "@/utils/request";
@@ -30,8 +30,13 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("SEND_PASSWORD_RESET"), reason }),
   z.object({ action: z.literal("RESET_TWO_FACTOR"), reason }),
   z.object({ action: z.literal("UNLOCK"), reason }),
-  z.object({ action: z.literal("GRANT_ADMIN"), reason }),
-  z.object({ action: z.literal("REVOKE_ADMIN"), reason }),
+  // Qualquer um dos seis cargos, e não só administrador ou usuário: os demais existiam no
+  // mapa desde a Etapa 1 sem caminho pela interface, alcançáveis apenas por script.
+  z.object({
+    action: z.literal("SET_ROLE"),
+    role: z.enum(["USER", "READ_ONLY", "AUDITOR", "SUPPORT", "ADMIN", "SUPER_ADMIN"]),
+    reason,
+  }),
   z.object({ action: z.literal("REVOKE_SESSION"), sessionId: z.string().min(1).max(64), reason }),
   z.object({ action: z.literal("FORCE_LOGOUT"), reason }),
 ]);
@@ -100,11 +105,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       case "UNLOCK":
         await adminUserService.unlock(ctx, id);
         break;
-      case "GRANT_ADMIN":
-        await adminUserService.setRole(ctx, id, "ADMIN");
-        break;
-      case "REVOKE_ADMIN":
-        await adminUserService.setRole(ctx, id, "USER");
+      case "SET_ROLE":
+        // `MANAGE_USERS` não basta: mexer em cargo é a única ação capaz de fabricar um
+        // administrador, e o suporte tem `MANAGE_USERS`. A permissão existia no mapa desde a
+        // Etapa 1 sem nenhuma verificação — esta é ela.
+        if (!can(admin, Permission.MANAGE_ROLES)) {
+          return NextResponse.json(
+            { error: "FORBIDDEN", message: "Seu cargo não gerencia cargos de outras contas." },
+            { status: 403 },
+          );
+        }
+        await adminUserService.setRole(ctx, id, parsed.data.role);
         break;
       case "REVOKE_SESSION":
         await adminUserService.revokeSession(ctx, id, parsed.data.sessionId);

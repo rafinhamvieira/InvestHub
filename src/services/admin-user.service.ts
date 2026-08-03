@@ -16,7 +16,7 @@ import { auditService } from "@/services/audit.service";
 import { sessionService } from "@/services/session.service";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
 import { userSessionRepository } from "@/repositories/user-session.repository";
-import { hasAdminAccess } from "@/lib/permissions";
+import { hasAdminAccess, isOwnerRole, ROLE_PERMISSIONS } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { authService } from "@/services/auth.service";
 import { sendEmail, adminActionEmailTemplate } from "@/lib/email";
@@ -163,6 +163,16 @@ export const adminUserService = {
     );
 
     return { users, total, page, pageSize };
+  },
+
+  /** Quantas contas há em cada cargo — alimenta a matriz de permissões. */
+  async roleCounts(): Promise<Record<string, number>> {
+    const roles = Object.keys(ROLE_PERMISSIONS) as Role[];
+    const counts = await Promise.all(
+      roles.map(async (role) => [role, await userRepository.countByRole(role)] as const),
+    );
+
+    return Object.fromEntries(counts);
   },
 
   /**
@@ -451,12 +461,35 @@ export const adminUserService = {
    * acabou de ser rebaixado ainda passa pelo middleware até o token expirar — mas esbarra
    * no guard de cada rota, que confere o cargo no banco a cada requisição.
    */
+  /**
+   * Troca o cargo da conta.
+   *
+   * Quem chama precisa ter `MANAGE_ROLES` — conferido na rota, porque é permissão do autor e
+   * não regra sobre o alvo. Ela existia no mapa desde a Etapa 1 sem nenhuma verificação, e a
+   * ausência abria escalada: `MANAGE_USERS` sozinha bastava para promover alguém a
+   * administrador, e o suporte tem `MANAGE_USERS`.
+   */
   async setRole(ctx: ActionContext, userId: string, role: Role): Promise<void> {
     // "Conceder" é definido pelo mapa de permissões: cargo novo com acesso ao painel entra
     // nesta conta automaticamente.
     const granting = hasAdminAccess({ id: userId, role });
     const action = granting ? "GRANT_ADMIN" : "REVOKE_ADMIN";
     const target = await authorize(action, ctx, userId);
+
+    if (target.role === role) {
+      throw new AdminActionError("ALREADY_APPLIED", "A conta já está neste cargo.");
+    }
+
+    // A plataforma não pode ficar sem quem gerencia cargos, restaura backup e atesta a
+    // trilha. Sem esta guarda, duas contas podem se rebaixar em sequência e trancar todo
+    // mundo do lado de fora — sem caminho de volta pela interface.
+    const leavingOwnership = isOwnerRole(target.role) && !isOwnerRole(role);
+    if (leavingOwnership && (await userRepository.countByRole(target.role)) <= 1) {
+      throw new AdminActionError(
+        "LAST_OWNER",
+        "Esta é a única conta com o cargo mais alto. Promova outra antes de rebaixá-la.",
+      );
+    }
 
     await userRepository.setRole(userId, role);
     await auditService.record({
