@@ -31,6 +31,15 @@ export enum Permission {
   VIEW_SYSTEM_HEALTH = "VIEW_SYSTEM_HEALTH",
   /** Ver os números de negócio da plataforma: contas, patrimônio, proventos, cobertura. */
   VIEW_BUSINESS_METRICS = "VIEW_BUSINESS_METRICS",
+  /**
+   * Ler o log da aplicação.
+   *
+   * Porta mais estreita que a da trilha de auditoria, e de propósito: a trilha tem catálogo
+   * fechado de eventos e campos revisados, enquanto o contexto de um log é livre — mensagem
+   * de erro de biblioteca, payload que falhou, o que o programador achou útil na hora.
+   * Não dá para prometer o que **não** vai aparecer ali.
+   */
+  VIEW_APPLICATION_LOGS = "VIEW_APPLICATION_LOGS",
   /** Alterar configurações da plataforma. */
   MANAGE_PLATFORM = "MANAGE_PLATFORM",
   /** Conceder e remover cargos. */
@@ -67,6 +76,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.MANAGE_USERS,
     Permission.VIEW_SYSTEM_HEALTH,
     Permission.VIEW_BUSINESS_METRICS,
+    Permission.VIEW_APPLICATION_LOGS,
     Permission.MANAGE_PLATFORM,
     Permission.VIEW_SECURITY_CENTER,
   ],

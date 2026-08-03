@@ -101,6 +101,44 @@ export interface RestoreDrillReport {
   verifiedAt: string;
 }
 
+export type AppLogLevel = "debug" | "info" | "warn" | "error";
+
+/** Uma linha do arquivo de log, já interpretada. */
+export interface AppLogEntry {
+  /** Estável dentro de uma varredura: arquivo e posição. Serve de chave na tela. */
+  id: string;
+  level: AppLogLevel;
+  message: string;
+  timestamp: string;
+  /** O que veio junto da chamada — tudo que não é nível, mensagem ou horário. */
+  context: Record<string, unknown>;
+}
+
+export interface AppLogFilters {
+  levels?: AppLogLevel[];
+  search?: string;
+  /** ISO. */
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface AppLogPage {
+  entries: AppLogEntry[];
+  /** Quantas linhas casaram **dentro da janela varrida**, não no histórico inteiro. */
+  total: number;
+  /**
+   * Verdadeiro quando a varredura parou no teto de bytes: existe histórico além do que foi
+   * lido. A tela diz isso em vez de fingir que aquilo é tudo.
+   */
+  truncated: boolean;
+  page: number;
+  pageSize: number;
+  /** Nulo quando não há arquivo — sink desligado ou pasta sem permissão de escrita. */
+  sizeBytes: number | null;
+}
+
 export interface AdminDashboard {
   /** Nulo quando o cargo não tem `VIEW_BUSINESS_METRICS`. */
   metrics: BusinessMetrics | null;

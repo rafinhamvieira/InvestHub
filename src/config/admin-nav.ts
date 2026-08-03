@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, ScrollText, Users, DatabaseBackup } from "lucide-react";
+import { FileText, LayoutDashboard, ScrollText, Users, DatabaseBackup } from "lucide-react";
 import { Permission } from "@/lib/permissions";
 
 export interface AdminNavItem {
@@ -38,6 +38,13 @@ export const ADMIN_NAV: AdminNavItem[] = [
     icon: Users,
     description: "Cadastro, permissões e ações administrativas",
     permission: Permission.MANAGE_USERS,
+  },
+  {
+    title: "Logs",
+    href: "/admin/logs",
+    icon: FileText,
+    description: "O que a aplicação registrou, com busca e filtro por nível",
+    permission: Permission.VIEW_APPLICATION_LOGS,
   },
   {
     title: "Backup",

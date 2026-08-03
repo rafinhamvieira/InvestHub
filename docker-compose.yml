@@ -58,8 +58,14 @@ services:
       # Mesma pasta do serviço `backup`: o painel lista os dumps automáticos e escreve os
       # gerados sob demanda no mesmo lugar.
       BACKUP_DIR: /backups
+      # O log em arquivo existe para sobreviver à recriação do container — que é justamente
+      # quando alguém quer saber o que aconteceu antes. O stdout continua saindo igual.
+      LOG_DIR: /logs
     volumes:
       - ./backups:/backups
+      # Precisa ser gravável pelo uid 1001 (o usuário da aplicação): `chown 1001:1001 logs`.
+      # Sem isso o sink se desliga sozinho e o painel avisa, em vez de derrubar a aplicação.
+      - ./logs:/logs
     expose:
       - "3000"
     depends_on:
