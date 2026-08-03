@@ -40,51 +40,47 @@ export interface ActorTarget {
 export interface PolicyResult {
   allowed: boolean;
   /** Código estável para a API responder e para a tela explicar a recusa. */
-  reason?: "SELF_TARGET" | "ADMIN_TARGET" | "SELF_DEMOTION" | "ALREADY_APPLIED";
+  reason?: "SELF_TARGET" | "ADMIN_TARGET" | "SELF_ROLE_CHANGE";
 }
 
 /**
- * Decide se a ação é permitida.
+ * Decide se a ação é permitida — **quem pode agir sobre quem**, nunca "faz sentido agir".
  *
- * Duas proibições, ambas sobre escalada de privilégio:
+ * Três proibições, todas sobre escalada de privilégio:
  *
  *  - **conta de outro administrador é intocável.** Resetar o 2FA ou trocar o e-mail de um
  *    par transformaria "administrar usuários" em "tomar o painel de quem também administra";
  *  - **sobre si mesmo, nada que mude identidade ou acesso.** Trocar o próprio e-mail ou
  *    zerar o próprio 2FA por aqui contorna as verificações que o fluxo normal de conta faz
- *    (senha atual, código do app) — e some do lugar onde o usuário esperaria ver isso.
+ *    (senha atual, código do app) — e some do lugar onde o usuário esperaria ver isso;
+ *  - **o próprio cargo não muda por aqui, em direção nenhuma.**
  *
  * Nome e desbloqueio ficam liberados sobre si: um é cosmético, o outro devolve acesso sem
  * conceder poder nenhum. Encerrar sessão também: derrubar o próprio acesso não escala
  * privilégio nenhum, e é o que alguém faz ao perceber que perdeu o notebook.
+ *
+ * **"Já está nessa situação" não mora aqui.** Esta função só conhece o cargo atual do alvo;
+ * comparar com o cargo pretendido é do serviço, que conhece os dois. A versão anterior
+ * tentava adivinhar pela distinção entre conceder e remover, e o resultado foi recusar toda
+ * troca entre dois cargos administrativos — de somente-leitura para suporte, por exemplo —
+ * com a mensagem errada.
  */
 export function canPerform(action: AdminAction, context: ActorTarget): PolicyResult {
   const isSelf = context.actorId === context.targetId;
   const isRoleAction = ROLE_ACTIONS.includes(action);
 
-  // Ninguém se rebaixa. Sem esta regra, o único administrador tira a própria permissão por
-  // engano e a plataforma fica sem quem administre — sem caminho de volta pela interface.
-  if (isSelf && action === "REVOKE_ADMIN") {
-    return { allowed: false, reason: "SELF_DEMOTION" };
-  }
-
-  if (isSelf && action === "GRANT_ADMIN") {
-    return { allowed: false, reason: "ALREADY_APPLIED" };
+  // O próprio cargo não muda por aqui, em direção nenhuma. Rebaixar-se tiraria o acesso de
+  // quem talvez seja o único a tê-lo, sem caminho de volta pela interface; promover-se
+  // dispensaria a decisão de outra pessoa, que é justamente o ponto de haver a regra.
+  if (isSelf && isRoleAction) {
+    return { allowed: false, reason: "SELF_ROLE_CHANGE" };
   }
 
   // Conta de outro administrador é intocável **nos dados** — trocar e-mail ou zerar 2FA de
-  // um par seria tomar o painel de quem também administra. Rebaixar continua permitido: é
-  // como se corrige uma permissão dada por engano.
+  // um par seria tomar o painel de quem também administra. Mexer no cargo continua
+  // permitido: é como se corrige uma permissão dada por engano.
   if (!isSelf && isPrivileged(context.targetRole) && !isRoleAction) {
     return { allowed: false, reason: "ADMIN_TARGET" };
-  }
-
-  if (action === "GRANT_ADMIN" && isPrivileged(context.targetRole)) {
-    return { allowed: false, reason: "ALREADY_APPLIED" };
-  }
-
-  if (action === "REVOKE_ADMIN" && !isPrivileged(context.targetRole)) {
-    return { allowed: false, reason: "ALREADY_APPLIED" };
   }
 
   if (isSelf && (action === "CHANGE_EMAIL" || action === "RESET_TWO_FACTOR")) {
@@ -97,6 +93,5 @@ export function canPerform(action: AdminAction, context: ActorTarget): PolicyRes
 export const POLICY_MESSAGES: Record<NonNullable<PolicyResult["reason"]>, string> = {
   ADMIN_TARGET: "Contas de administrador não podem ser alteradas por outro administrador.",
   SELF_TARGET: "Use as configurações da sua própria conta para esta alteração.",
-  SELF_DEMOTION: "Você não pode remover a sua própria permissão de administrador.",
-  ALREADY_APPLIED: "A conta já está nesta situação.",
+  SELF_ROLE_CHANGE: "Você não pode alterar o seu próprio cargo. Peça a quem gerencia cargos.",
 };

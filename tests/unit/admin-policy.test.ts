@@ -55,8 +55,7 @@ describe("quem pode agir sobre quem", () => {
   it("tem mensagem para cada motivo de recusa", () => {
     expect(POLICY_MESSAGES.ADMIN_TARGET).toBeTruthy();
     expect(POLICY_MESSAGES.SELF_TARGET).toBeTruthy();
-    expect(POLICY_MESSAGES.SELF_DEMOTION).toBeTruthy();
-    expect(POLICY_MESSAGES.ALREADY_APPLIED).toBeTruthy();
+    expect(POLICY_MESSAGES.SELF_ROLE_CHANGE).toBeTruthy();
   });
 });
 
@@ -79,19 +78,31 @@ describe("permissão de administrador", () => {
     expect(result.allowed).toBe(true);
   });
 
-  it("nunca deixa o administrador remover a própria permissão", () => {
-    const result = canPerform("REVOKE_ADMIN", { actorId: eu, targetId: eu, targetRole: "ADMIN" });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toBe("SELF_DEMOTION");
+  it("nunca deixa alguém mexer no próprio cargo, em direção nenhuma", () => {
+    for (const action of ["GRANT_ADMIN", "REVOKE_ADMIN"] as const) {
+      const result = canPerform(action, { actorId: eu, targetId: eu, targetRole: "ADMIN" });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe("SELF_ROLE_CHANGE");
+    }
   });
 
-  it("recusa conceder a quem já é administrador e remover de quem não é", () => {
-    expect(
-      canPerform("GRANT_ADMIN", { actorId: eu, targetId: "admin2", targetRole: "ADMIN" }).reason,
-    ).toBe("ALREADY_APPLIED");
-    expect(
-      canPerform("REVOKE_ADMIN", { actorId: eu, targetId: "u1", targetRole: "USER" }).reason,
-    ).toBe("ALREADY_APPLIED");
+  it("permite trocar entre dois cargos administrativos", () => {
+    // Regressão: a política recusava isto como "a conta já está nesta situação". Ela só
+    // conhece o cargo atual do alvo, então tentava adivinhar pela distinção entre conceder
+    // e remover — e alguém de somente-leitura não podia virar suporte.
+    for (const targetRole of ["READ_ONLY", "AUDITOR", "SUPPORT", "ADMIN"] as const) {
+      expect(canPerform("GRANT_ADMIN", { actorId: eu, targetId: "u2", targetRole }).allowed).toBe(
+        true,
+      );
+    }
+  });
+
+  it("comparar cargo atual com o pretendido não é papel da política", () => {
+    // Ela recebe só o cargo atual; quem conhece os dois é o serviço, e é lá que "já está
+    // nesta situação" é decidido.
+    expect(canPerform("REVOKE_ADMIN", { actorId: eu, targetId: "u1", targetRole: "USER" }).allowed).toBe(
+      true,
+    );
   });
 
   it("continua bloqueando os dados de outro administrador", () => {
