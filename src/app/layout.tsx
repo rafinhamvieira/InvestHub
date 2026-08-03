@@ -9,7 +9,25 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
+/**
+ * Base para resolver os caminhos relativos das imagens de pré-visualização.
+ *
+ * Sem ela o Next resolve `/icon-512.png` contra `http://localhost:3000` e avisa a cada
+ * build — o que quebra a prévia do link em qualquer rede social ou aplicativo de mensagem,
+ * porque o endereço aponta para a máquina de quem clicou.
+ *
+ * Nunca lança: `APP_URL` malformada derrubaria o build inteiro por causa de uma miniatura.
+ */
+function resolveMetadataBase(): URL {
+  try {
+    return new URL(process.env.APP_URL ?? "http://localhost:3000");
+  } catch {
+    return new URL("http://localhost:3000");
+  }
+}
+
 export const metadata: Metadata = {
+  metadataBase: resolveMetadataBase(),
   title: {
     default: "InvestHub — Invista melhor. Viva o futuro.",
     template: "%s · InvestHub",

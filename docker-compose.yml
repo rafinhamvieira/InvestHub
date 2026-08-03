@@ -48,6 +48,10 @@ services:
     build:
       context: .
       target: runner
+      args:
+        # Precisa chegar no build, não só no runtime: as páginas públicas são
+        # pré-renderizadas e gravam nelas o endereço das imagens de pré-visualização.
+        APP_URL: ${APP_URL:?defina APP_URL no .env}
     restart: unless-stopped
     env_file: .env
     environment:

@@ -22,6 +22,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# As páginas públicas (login, cadastro) são pré-renderizadas aqui, e é aqui que o endereço
+# das imagens de pré-visualização é gravado nelas. Sem este argumento o build usaria
+# localhost e a prévia do link quebraria justamente nas páginas que alguém compartilha.
+# O `.env` do runtime chega tarde demais para elas.
+ARG APP_URL
+ENV APP_URL=${APP_URL}
 # O Git não versiona diretórios vazios: se public/ não tiver nenhum arquivo, ele não
 # chega no clone e o COPY do estágio runner falha. Garantir a pasta aqui torna o build
 # independente disso.
