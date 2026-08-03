@@ -26,12 +26,40 @@ describe("sessões (banco real)", () => {
 
     expect(await sessionService.isActive(session.id)).toBe(true);
 
-    await prisma.userSession.update({
-      where: { id: session.id },
-      data: { revokedAt: new Date(), revocationReason: "Revogada no teste" },
+    // Pelo serviço, e não por escrita direta no banco: `isActive` guarda a resposta
+    // positiva no Redis por 60 segundos, e é o `revoke` que derruba essa entrada. Revogar
+    // por fora deixaria a sessão viva até o cache expirar — a versão anterior deste teste
+    // fazia isso e cobrava do código um comportamento que nenhum caminho real produz.
+    await sessionService.revoke({
+      sessionId: session.id,
+      userId: user.id,
+      userEmail: user.email,
+      revokedBy: user.id,
+      actorEmail: user.email,
+      reason: "Revogada no teste",
     });
 
     expect(await sessionService.isActive(session.id)).toBe(false);
+  });
+
+  it("a revogação fica gravada com autor e motivo", async () => {
+    const { sessionService } = await import("@/services/session.service");
+    const user = await createUser();
+    const session = await createSession(user.id);
+
+    await sessionService.revoke({
+      sessionId: session.id,
+      userId: user.id,
+      userEmail: user.email,
+      revokedBy: user.id,
+      actorEmail: user.email,
+      reason: "Encerrada pelo próprio usuário",
+    });
+
+    const gravada = await prisma.userSession.findUnique({ where: { id: session.id } });
+    expect(gravada?.revokedAt).not.toBeNull();
+    expect(gravada?.revokedBy).toBe(user.id);
+    expect(gravada?.revocationReason).toBe("Encerrada pelo próprio usuário");
   });
 
   it("sessão expirada não vale", async () => {
