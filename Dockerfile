@@ -7,7 +7,17 @@ RUN apk add --no-cache libc6-compat
 # O .npmrc carrega legacy-peer-deps (conflito de peers do next-auth beta com o @auth/core);
 # sem ele o `npm ci` resolveria diferente do ambiente local. O glob evita falhar se não existir.
 COPY package.json package-lock.json* .npmrc* ./
+# HUSKY=0 desliga o `prepare` do husky: ele instala hooks de Git, e aqui não há repositório
+# — `.git` e `.husky` ficam fora do contexto. Sem isto, um gancho de desenvolvimento decide
+# se a imagem de produção compila.
+ENV HUSKY=0
 RUN npm ci
+# `npm ci` já falha por conta própria quando não consegue baixar tudo, mas rede instável
+# rendeu ao menos uma árvore incompleta com saída zero — e o erro só apareceu três camadas
+# adiante, como "prisma: not found", que não diz nada sobre a causa. A conferência custa
+# milissegundos e transforma isso numa mensagem que se entende.
+RUN test -x ./node_modules/.bin/prisma || \
+  (echo "npm ci terminou sem instalar as devDependencies (prisma ausente). Rede ou disco." && exit 1)
 # O schema entra depois do `npm ci` de propósito: mudar o schema não pode invalidar a
 # instalação das dependências. O `generate` roda aqui, e não no builder, porque aqui o
 # engine baixado pelo `npm ci` está no mesmo estágio — o builder só copia o node_modules
