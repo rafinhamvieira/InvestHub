@@ -8,6 +8,13 @@ RUN apk add --no-cache libc6-compat
 # sem ele o `npm ci` resolveria diferente do ambiente local. O glob evita falhar se não existir.
 COPY package.json package-lock.json* .npmrc* ./
 RUN npm ci
+# O schema entra depois do `npm ci` de propósito: mudar o schema não pode invalidar a
+# instalação das dependências. O `generate` roda aqui, e não no builder, porque aqui o
+# engine baixado pelo `npm ci` está no mesmo estágio — o builder só copia o node_modules
+# e, ao rodar `generate` lá, o Prisma ia à rede reconferir o binário. Com isso o estágio
+# que compila o app não precisa de DNS nenhuma vez.
+COPY prisma ./prisma
+RUN ./node_modules/.bin/prisma generate
 
 # ---------- builder ----------
 FROM node:20-alpine AS builder
@@ -19,9 +26,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # chega no clone e o COPY do estágio runner falha. Garantir a pasta aqui torna o build
 # independente disso.
 RUN mkdir -p /app/public
-# Binário local, não `npx`: o npx consulta o registry quando não resolve o pacote de cara,
-# e um build que depende de DNS quebra por motivo que nada tem a ver com o código.
-RUN ./node_modules/.bin/prisma generate
+# Sem `prisma generate` aqui: o client já vem gerado em node_modules/.prisma, copiado do
+# estágio deps. Ver o comentário lá.
 RUN npm run build
 
 # ---------- runner ----------
