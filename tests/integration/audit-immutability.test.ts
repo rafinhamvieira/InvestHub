@@ -58,7 +58,10 @@ describe("trilha de auditoria no banco", () => {
     expect(segundo.seq).toBe(primeiro.seq + 1n);
   });
 
-  it("mantém o registro legível depois de a conta ser excluída", async () => {
+  it("mantém o registro intacto depois de a conta ser excluída", async () => {
+    // Enquanto havia chave estrangeira com SET NULL, este caso falhava: excluir a conta
+    // disparava um UPDATE na trilha, e o trigger de imutabilidade recusava. Nenhuma conta
+    // com histórico podia sair da base — ou seja, nenhuma conta.
     const user = await createUser("some@investhub.local");
     await append("USER_REGISTERED", {
       userId: user.id,
@@ -71,9 +74,32 @@ describe("trilha de auditoria no banco", () => {
 
     const log = await prisma.auditLog.findFirst();
     expect(log).not.toBeNull();
-    // Vínculo some, identidade permanece.
-    expect(log!.userId).toBeNull();
+    // A conta some; o registro não é tocado — nem para anular o vínculo. É o que mantém a
+    // cadeia de hash válida, já que `userId` entra no payload assinado.
+    expect(log!.userId).toBe(user.id);
     expect(log!.targetEmail).toBe("some@investhub.local");
+  });
+
+  it("excluir a conta não invalida a cadeia de hash", async () => {
+    const { computeHash } = await import("@/services/audit-integrity.service");
+    const { auditLogRepository } = await import("@/repositories/audit-log.repository");
+
+    const user = await createUser("saindo@investhub.local");
+    await append("USER_REGISTERED", { userId: user.id, targetEmail: user.email });
+    await append("ACCOUNT_REMOVED_UNVERIFIED", {
+      userId: user.id,
+      metadata: { email: user.email },
+    });
+
+    await prisma.user.delete({ where: { id: user.id } });
+
+    const rows = await auditLogRepository.chainSlice(0n, 10);
+    let anterior: string | null = null;
+
+    for (const row of rows) {
+      expect(computeHash(row, anterior)).toBe(row.hash);
+      anterior = row.hash;
+    }
   });
 
   it("hash calculado pelo banco confere com o recomputado pela aplicação", async () => {

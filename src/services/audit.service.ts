@@ -44,12 +44,19 @@ export class AuditReasonRequiredError extends Error {
 /** Teto de linhas por exportação — evita que um clique tente materializar a base inteira. */
 const EXPORT_LIMIT = 10_000;
 
-type AuditRow = Prisma.AuditLogGetPayload<{
-  include: {
-    user: { select: { id: true; name: true; email: true } };
-    actor: { select: { id: true; name: true; email: true } };
-  };
-}>;
+/**
+ * Linha da trilha com autor e alvo já resolvidos pelo repositório.
+ *
+ * A hidratação deixou de ser um `include` do Prisma quando a chave estrangeira para `users`
+ * saiu — ela obrigava a trilha a ser alterável na exclusão de conta. O formato aqui é o
+ * mesmo de antes; muda quem o monta.
+ */
+type Person = { id: string; name: string | null; email: string };
+
+type AuditRow = Prisma.AuditLogGetPayload<object> & {
+  user: Person | null;
+  actor: Person | null;
+};
 
 function describe(row: AuditRow): string {
   const label = AUDIT_ACTION_LABELS[row.action as AuditAction] ?? row.action;

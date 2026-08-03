@@ -65,8 +65,10 @@ export const accountCleanupService = {
         continue;
       }
 
-      // A auditoria vem antes: com `onDelete: SetNull` no `userId`, o registro sobrevive à
-      // conta, e o e-mail no metadata é o que permite saber depois quem foi removido.
+      // A auditoria vem antes: a trilha não tem chave estrangeira para `users`, então o
+      // registro sobrevive à conta, e o e-mail no metadata é o que permite saber depois quem
+      // foi removido. Enquanto a chave existiu, este `delete` falhava — o próprio registro
+      // recém-gravado disparava um UPDATE que o trigger de imutabilidade recusava.
       await auditService.record({
         userId: candidate.id,
         action: AUDIT_ACTIONS.ACCOUNT_REMOVED_UNVERIFIED,

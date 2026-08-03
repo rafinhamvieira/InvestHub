@@ -74,14 +74,10 @@ export const auditLogRepository = {
    * monotônico, qualquer página custa o mesmo.
    */
   async listPage(filters: AuditFilters) {
-    const where = buildWhere(filters);
+    const where = buildWhere(filters, await matchingUserIds(filters.search));
 
     const rows = await prisma.auditLog.findMany({
       where: filters.cursor ? { ...where, seq: { lt: BigInt(filters.cursor) } } : where,
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        actor: { select: { id: true, name: true, email: true } },
-      },
       orderBy: { seq: "desc" },
       take: filters.pageSize + 1,
     });
@@ -90,26 +86,24 @@ export const auditLogRepository = {
     const page = hasMore ? rows.slice(0, filters.pageSize) : rows;
 
     return {
-      rows: page,
+      rows: await withPeople(page),
       nextCursor: hasMore ? page[page.length - 1]!.seq.toString() : null,
     };
   },
 
-  count(filters: AuditFilters) {
-    return prisma.auditLog.count({ where: buildWhere(filters) });
+  async count(filters: AuditFilters) {
+    return prisma.auditLog.count({ where: buildWhere(filters, await matchingUserIds(filters.search)) });
   },
 
-  /** Lote para exportação, sem o `include` — o CSV/Excel usa os e-mails denormalizados. */
-  listForExport(filters: AuditFilters, limit: number) {
-    return prisma.auditLog.findMany({
-      where: buildWhere(filters),
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        actor: { select: { id: true, name: true, email: true } },
-      },
+  /** Lote para exportação. O CSV/Excel usa os e-mails denormalizados. */
+  async listForExport(filters: AuditFilters, limit: number) {
+    const rows = await prisma.auditLog.findMany({
+      where: buildWhere(filters, await matchingUserIds(filters.search)),
       orderBy: { seq: "desc" },
       take: limit,
     });
+
+    return withPeople(rows);
   },
 
   /** Cabeça da cadeia — base do checkpoint e da verificação. */
@@ -178,14 +172,77 @@ export const auditLogRepository = {
   },
 };
 
+/** Quantas contas a busca por nome resolve antes de virar filtro. */
+const SEARCH_USER_LIMIT = 500;
+
+type Person = { id: string; name: string | null; email: string };
+
+/**
+ * Contas cujo nome ou e-mail **atual** casa com a busca.
+ *
+ * Existe porque a trilha não tem mais relação com `users`: sem chave estrangeira não há
+ * `where: { user: { name: ... } }`. Resolver os ids antes custa uma consulta indexada e
+ * mantém a busca funcionando para quem trocou de e-mail depois do evento — caso em que o
+ * e-mail denormalizado na linha guarda o endereço antigo, não o de hoje.
+ */
+async function matchingUserIds(search?: string): Promise<string[]> {
+  if (!search) return [];
+
+  const contains = { contains: search, mode: "insensitive" as const };
+  const users = await prisma.user.findMany({
+    where: { OR: [{ name: contains }, { email: contains }] },
+    select: { id: true },
+    take: SEARCH_USER_LIMIT,
+  });
+
+  return users.map((user) => user.id);
+}
+
+/**
+ * Devolve as linhas com autor e alvo hidratados, no mesmo formato que o `include` produzia.
+ *
+ * Uma consulta para o lote inteiro, não uma por linha. Conta excluída simplesmente não
+ * aparece no mapa e o campo fica nulo — que é exatamente o comportamento que o `SET NULL`
+ * tentava dar, agora sem precisar escrever na trilha para consegui-lo.
+ */
+async function withPeople<T extends { userId: string | null; actorId: string | null }>(
+  rows: T[],
+): Promise<(T & { user: Person | null; actor: Person | null })[]> {
+  const ids = [...new Set(rows.flatMap((row) => [row.userId, row.actorId]))].filter(
+    (id): id is string => id !== null,
+  );
+
+  const people = ids.length
+    ? await prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+
+  const byId = new Map(people.map((person) => [person.id, person]));
+
+  return rows.map((row) => ({
+    ...row,
+    user: row.userId ? (byId.get(row.userId) ?? null) : null,
+    actor: row.actorId ? (byId.get(row.actorId) ?? null) : null,
+  }));
+}
+
 /**
  * Filtro do Prisma a partir dos parâmetros da tela.
  *
  * Exportado para teste: é a parte com regra de verdade — categoria vira prefixo de ação,
  * busca cobre autor e alvo, período é inclusivo nas duas pontas — e a que quebraria em
  * silêncio, devolvendo resultado a menos sem ninguém perceber.
+ *
+ * Continua pura: os ids das contas que casam com a busca são resolvidos pelo repositório e
+ * entram por parâmetro. Sem isso a função precisaria de banco, e a regra deixaria de ser
+ * testável sem subir Postgres.
  */
-export function buildWhere(filters: AuditFilters): Prisma.AuditLogWhereInput {
+export function buildWhere(
+  filters: AuditFilters,
+  matchedUserIds: string[] = [],
+): Prisma.AuditLogWhereInput {
   const where: Prisma.AuditLogWhereInput = {};
   const and: Prisma.AuditLogWhereInput[] = [];
 
@@ -209,10 +266,13 @@ export function buildWhere(filters: AuditFilters): Prisma.AuditLogWhereInput {
     const contains = { contains: filters.search, mode: "insensitive" as const };
     and.push({
       OR: [
+        // O e-mail gravado na linha é o do momento do evento; os ids cobrem quem trocou de
+        // endereço depois. As duas formas juntas é o que a busca por relação fazia antes.
         { targetEmail: contains },
         { actorEmail: contains },
-        { user: { OR: [{ name: contains }, { email: contains }] } },
-        { actor: { OR: [{ name: contains }, { email: contains }] } },
+        ...(matchedUserIds.length > 0
+          ? [{ userId: { in: matchedUserIds } }, { actorId: { in: matchedUserIds } }]
+          : []),
       ],
     });
   }

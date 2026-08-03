@@ -138,8 +138,8 @@ model User {
   sessions             Session[]
   passwordResetTokens  PasswordResetToken[]
   loginAudits          LoginAudit[]
-  auditLogs            AuditLog[]            @relation("AuditTarget")
-  auditActions         AuditLog[]            @relation("AuditActor")
+  // Sem relação com `AuditLog`: a trilha guarda o id sem chave estrangeira, para que
+  // excluir a conta não precise alterá-la. Ver o comentário no modelo `AuditLog`.
   userSessions         UserSession[]
   brokers              Broker[]
   transactions         Transaction[]
@@ -251,7 +251,7 @@ model AuditLog {
   /// SUCCESS | FAILED
   result String @default("SUCCESS")
 
-  /// Quem sofreu a ação.
+  /// Quem sofreu a ação. **Sem chave estrangeira, de propósito** — ver o fim do modelo.
   userId      String?
   targetEmail String?
   /// Quem executou. Igual a `userId` quando o próprio usuário agiu.
@@ -273,8 +273,18 @@ model AuditLog {
   hash      String?
   createdAt DateTime @default(now())
 
-  user  User? @relation("AuditTarget", fields: [userId], references: [id], onDelete: SetNull)
-  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  /// Não há relação com `User`, e a ausência é a decisão.
+  ///
+  /// Com `onDelete: SetNull`, excluir uma conta fazia o Postgres **atualizar** esta tabela —
+  /// e o trigger de imutabilidade recusa qualquer UPDATE. Nenhuma conta com histórico podia
+  /// ser excluída, o que na prática era toda conta, porque o cadastro já gera registro.
+  ///
+  /// Permitir o UPDATE seria pior: `userId` e `actorId` entram no payload assinado, então
+  /// anulá-los quebraria a cadeia de hash e a verificação acusaria adulteração onde houve
+  /// apenas o exercício de um direito do usuário.
+  ///
+  /// O id continua na coluna e o e-mail denormalizado mantém a linha legível depois que a
+  /// conta some. Quem precisa do nome atual resolve por consulta, no repositório.
 
   @@index([createdAt(sort: Desc)])
   @@index([actorId, createdAt(sort: Desc)])
