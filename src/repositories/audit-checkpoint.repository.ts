@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import type { PrismaClient } from "@prisma/client";
+
+/** Ver `audit-log.repository`: o ensaio de restauração confere as âncoras do banco temporário. */
+type Db = Pick<PrismaClient, "auditCheckpoint">;
 
 /**
  * Âncoras da cadeia de auditoria.
@@ -18,8 +22,8 @@ export const auditCheckpointRepository = {
     });
   },
 
-  list() {
-    return prisma.auditCheckpoint.findMany({
+  list(client: Db = prisma) {
+    return client.auditCheckpoint.findMany({
       orderBy: { seq: "asc" },
       select: { seq: true, headHash: true, hmac: true, createdAt: true },
     });

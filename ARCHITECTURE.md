@@ -129,6 +129,8 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 
 **O payload não é remontado em JavaScript.** O banco devolve o texto que o trigger assinou, com a mesma expressão SQL; o Node só calcula o SHA-256 sobre ele e compara com o hash gravado. Reproduzir `jsonb::text` e `to_char` em JS é refazer o Postgres — e foi o que fez a verificação acusar adulteração em todo registro com metadados. O hash continua sendo calculado fora do banco: o que ele faz é renderizar colunas que já guarda, não atestar a própria trilha. A verificação usa o hash do registro anterior que ela mesma conferiu, nunca o `prevHash` gravado na linha.
 
+**O ensaio de restauração usa esta mesma verificação.** `auditIntegrityService.verify()` aceita um cliente de banco: apontado para a cópia temporária, ele prova que o backup preserva o encadeamento e que as âncoras continuam assinadas pela chave atual. Backup que carrega a trilha mas perde o encadeamento seria backup de um relatório, não de uma auditoria — e a diferença só aparece se alguém olhar.
+
 **Registros anteriores à cadeia.** A tabela existia antes do trigger, e a migração acrescentou as colunas de hash sem preencher o que já estava lá. Esses registros formam um prefixo sem hash: são contados e declarados no laudo, não verificados. Hash vazio depois do início da cadeia é divergência — o trigger não produz isso e o banco recusa `UPDATE`. Preencher os antigos retroativamente foi descartado: daria cadeia coerente sobre dados nunca protegidos, isto é, garantia fabricada.
 
 ## 11. Sessões

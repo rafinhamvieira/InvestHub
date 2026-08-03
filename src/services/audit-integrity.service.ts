@@ -19,6 +19,10 @@ import { auditLogRepository } from "@/repositories/audit-log.repository";
 import { auditCheckpointRepository } from "@/repositories/audit-checkpoint.repository";
 import { logger } from "@/lib/logger";
 import type { IntegrityReport } from "@/types/audit";
+import type { PrismaClient } from "@prisma/client";
+
+/** Banco alvo da verificação: o da aplicação por padrão, ou o do ensaio de restauração. */
+type VerifyClient = Pick<PrismaClient, "auditLog" | "auditCheckpoint" | "$queryRaw">;
 
 /** Registros lidos por vez ao percorrer a cadeia. */
 const CHAIN_BATCH = 1000;
@@ -207,13 +211,17 @@ export const auditIntegrityService = {
    *
    * Leitura pura: não corrige nada, não apaga nada. Se a trilha estiver quebrada, quem
    * decide o que fazer é uma pessoa.
+   *
+   * O `client` existe para o ensaio de restauração conferir a trilha **dentro do backup**,
+   * num banco temporário, com exatamente este código. Um backup que carrega a trilha mas
+   * perde o encadeamento não seria backup de uma auditoria — seria de um relatório.
    */
-  async verify(): Promise<IntegrityReport> {
+  async verify(client?: VerifyClient): Promise<IntegrityReport> {
     const startedAt = Date.now();
 
     const [total, checkpoints] = await Promise.all([
-      auditLogRepository.total(),
-      auditCheckpointRepository.list(),
+      auditLogRepository.total(client),
+      auditCheckpointRepository.list(client),
     ]);
 
     let lastValidCheckpoint: IntegrityReport["lastValidCheckpoint"] = null;
@@ -231,7 +239,7 @@ export const auditIntegrityService = {
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const rows = await auditLogRepository.chainSlice(state.cursor, CHAIN_BATCH);
+      const rows = await auditLogRepository.chainSlice(state.cursor, CHAIN_BATCH, client);
       if (rows.length === 0) break;
 
       state = walkChain(rows, state);

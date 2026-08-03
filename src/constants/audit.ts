@@ -48,6 +48,8 @@ export const AUDIT_ACTIONS = {
   ADMIN_BACKUP_DOWNLOADED: "ADMIN_BACKUP_DOWNLOADED",
   ADMIN_BACKUP_CREATED: "ADMIN_BACKUP_CREATED",
   ADMIN_BACKUP_RESTORED: "ADMIN_BACKUP_RESTORED",
+  /** Ensaio: o backup foi carregado num banco temporário e conferido, sem tocar a produção. */
+  ADMIN_BACKUP_DRILL: "ADMIN_BACKUP_DRILL",
   ADMIN_ACCESS_DENIED: "ADMIN_ACCESS_DENIED",
   ADMIN_ROLE_GRANTED: "ADMIN_ROLE_GRANTED",
   ADMIN_ROLE_REVOKED: "ADMIN_ROLE_REVOKED",
@@ -85,6 +87,7 @@ export const SECURITY_CRITICAL_ACTIONS = new Set<string>([
   AUDIT_ACTIONS.ADMIN_USER_EMAIL_CHANGED,
   AUDIT_ACTIONS.ADMIN_PASSWORD_RESET_SENT,
   AUDIT_ACTIONS.ADMIN_BACKUP_RESTORED,
+  AUDIT_ACTIONS.ADMIN_BACKUP_DRILL,
 ]);
 
 /**
@@ -100,6 +103,9 @@ export const ACTIONS_REQUIRING_REASON = new Set<string>([
   AUDIT_ACTIONS.ADMIN_ACCOUNT_UNLOCKED,
   AUDIT_ACTIONS.ADMIN_SESSIONS_REVOKED,
   AUDIT_ACTIONS.ADMIN_BACKUP_RESTORED,
+  // O ensaio não toca a produção, mas cria uma cópia completa da base num banco temporário.
+  // A janela é curta e o banco é apagado ao fim; ainda assim, quem a abriu fica registrado.
+  AUDIT_ACTIONS.ADMIN_BACKUP_DRILL,
 ]);
 
 export function isSecurityCritical(action: string): boolean {
@@ -139,6 +145,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   ADMIN_BACKUP_DOWNLOADED: "Backup baixado",
   ADMIN_BACKUP_CREATED: "Backup gerado",
   ADMIN_BACKUP_RESTORED: "Backup restaurado",
+  ADMIN_BACKUP_DRILL: "Ensaio de restauração de backup",
   ADMIN_ACCESS_DENIED: "Acesso administrativo negado",
   ADMIN_ROLE_GRANTED: "Cargo concedido",
   ADMIN_ROLE_REVOKED: "Cargo removido",

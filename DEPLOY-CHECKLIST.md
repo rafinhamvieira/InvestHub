@@ -179,3 +179,61 @@ docker compose exec -T postgres psql -U investhub -d investhub -c "SELECT count(
 
 Buraco entre `menor` e `maior` com contagem menor que a diferença é evidência de remoção —
 a trilha recusa DELETE, então isso não deveria acontecer nunca.
+
+## Restaurar um backup de verdade
+
+**O painel não faz isso, e a ausência é deliberada.** Restaurar por cima do banco em uso
+exige derrubar as conexões e apagar o schema inteiro — com a aplicação destruindo o banco
+em que ela própria roda, e sem volta se falhar no meio. O painel oferece o **ensaio**
+(Backup → Ensaiar), que carrega o arquivo num banco temporário, confere e apaga. Use o
+ensaio para saber se o backup presta; use o procedimento abaixo para restaurar.
+
+Os dumps são SQL puro gerados sem `--clean`, então não sobrescrevem: é preciso apagar o
+schema antes, e é justamente esse o passo irreversível.
+
+Faça em horário combinado. A plataforma fica fora do ar do passo 2 ao 6.
+
+```bash
+cd /opt/investhub
+
+# 1. Rede de segurança: dump do estado atual, antes de qualquer coisa.
+#    Se a restauração der errado, é ele que traz o mundo de volta.
+docker compose exec -T postgres pg_dump -U investhub --no-owner --no-privileges investhub \
+  | gzip > "./backups/pre-restauracao-$(date +%Y%m%d-%H%M).sql.gz"
+
+# 2. Derrubar quem escreve. A aplicação e o agendador saem; o banco fica.
+docker compose stop app scheduler migrate
+
+# 3. Encerrar conexões remanescentes (o pool do Prisma demora a soltar).
+docker compose exec -T postgres psql -U investhub -d postgres -c \
+  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'investhub' AND pid <> pg_backend_pid();"
+
+# 4. Apagar o schema e recriar vazio. ESTE PASSO NÃO TEM VOLTA.
+docker compose exec -T postgres psql -U investhub -d investhub -c \
+  "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+# 5. Carregar o backup. ON_ERROR_STOP faz o comando parar no primeiro erro,
+#    em vez de seguir e deixar o banco pela metade.
+gunzip -c ./backups/ARQUIVO.sql.gz \
+  | docker compose exec -T postgres psql -U investhub -d investhub -v ON_ERROR_STOP=1
+
+# 6. Subir tudo de novo. O `migrate` aplica o que faltar entre o backup e o código atual.
+docker compose up -d
+```
+
+Depois de subir, confira nesta ordem:
+
+1. `docker compose logs migrate --tail=30` — as migrações aplicaram sem erro?
+2. Painel → Auditoria → **Verificar agora** — a cadeia continua íntegra?
+3. Painel → o resumo de saúde está verde?
+4. Entre com uma conta e confira a carteira.
+
+**Se o passo 5 falhar**, o banco está vazio ou incompleto. Não improvise: repita do passo 4
+usando o dump de segurança do passo 1. É para isso que ele existe.
+
+**Backup de outra máquina** (o arquivo cifrado que o painel baixa) precisa ser decifrado
+antes:
+
+```bash
+npx tsx scripts/decrypt-backup.ts arquivo.sql.gz.enc "senha"
+```

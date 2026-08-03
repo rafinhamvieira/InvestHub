@@ -69,6 +69,38 @@ export interface HealthSummary {
   generatedAt: string;
 }
 
+/** Uma tabela no laudo do ensaio: quanto veio no backup, quanto existe hoje. */
+export interface RestoreTableCount {
+  label: string;
+  backup: number;
+  current: number;
+}
+
+/**
+ * Laudo do ensaio de restauração.
+ *
+ * Backup nunca restaurado não é backup — é um arquivo cuja utilidade ninguém verificou. O
+ * ensaio carrega o dump num banco temporário, confere e apaga. A produção não é tocada em
+ * nenhum momento.
+ */
+export interface RestoreDrillReport {
+  file: string;
+  /** Nome do banco temporário usado e já removido — aparece no laudo para rastreabilidade. */
+  database: string;
+  durationMs: number;
+  tables: RestoreTableCount[];
+  /** Registro mais recente da trilha dentro do backup: diz de quando é a cópia. */
+  newestAuditAt: string | null;
+  /** Verificação da cadeia de hash *dentro do backup*, com o mesmo código da produção. */
+  auditChainValid: boolean;
+  auditRecords: number;
+  /** Último checkpoint do backup cuja assinatura ainda confere com a chave atual. */
+  lastValidCheckpointSeq: string | null;
+  /** Problemas que pedem atenção humana; vazio quando o ensaio saiu limpo. */
+  warnings: string[];
+  verifiedAt: string;
+}
+
 export interface AdminDashboard {
   /** Nulo quando o cargo não tem `VIEW_BUSINESS_METRICS`. */
   metrics: BusinessMetrics | null;

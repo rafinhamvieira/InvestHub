@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AuditFilters } from "@/types/audit";
 import type { AuditCategory } from "@/constants/audit";
 
@@ -41,6 +41,13 @@ const CATEGORY_PREFIXES: Record<AuditCategory, string[]> = {
 
 /** User-agent chega a 500+ caracteres; o que identifica o cliente está no começo. */
 const USER_AGENT_MAX = 200;
+
+/**
+ * Cliente do banco. Quase sempre o singleton da aplicação; o ensaio de restauração aponta
+ * para um banco temporário, e é o que permite conferir a trilha *dentro do backup* com
+ * exatamente o mesmo código que a confere em produção.
+ */
+type Db = Pick<PrismaClient, "auditLog" | "$queryRaw">;
 
 export const auditLogRepository = {
   /** Único caminho de escrita. `seq`, `prevHash` e `hash` são preenchidos por trigger. */
@@ -114,8 +121,8 @@ export const auditLogRepository = {
     });
   },
 
-  total() {
-    return prisma.auditLog.count();
+  total(client: Db = prisma) {
+    return client.auditLog.count();
   },
 
   /**
@@ -141,8 +148,8 @@ export const auditLogRepository = {
    * registro que ela mesma acabou de conferir, não o `prevHash` guardado na linha, que é
    * justamente um dos campos que uma adulteração ajustaria.
    */
-  chainSlice(afterSeq: bigint, limit: number) {
-    return prisma.$queryRaw<
+  chainSlice(afterSeq: bigint, limit: number, client: Db = prisma) {
+    return client.$queryRaw<
       { seq: bigint; hash: string | null; createdAt: Date; payloadTail: string }[]
     >`
       SELECT

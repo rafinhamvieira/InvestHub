@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requirePermission, AuthorizationError } from "@/lib/auth-guard";
-import { Permission } from "@/lib/permissions";
+import { can, Permission } from "@/lib/permissions";
 import { adminBackupService } from "@/services/admin-backup.service";
 import { BackupView } from "@/components/admin/backup-view";
 
@@ -19,8 +19,9 @@ export const metadata: Metadata = { title: "Backup" };
  * conteúdo do banco, mas é o inventário de onde ele está, e não é assunto deles.
  */
 export default async function AdminBackupPage() {
+  let admin;
   try {
-    await requirePermission(Permission.MANAGE_BACKUPS);
+    admin = await requirePermission(Permission.MANAGE_BACKUPS);
   } catch (error) {
     redirect(
       error instanceof AuthorizationError && error.code === "UNAUTHORIZED" ? "/login" : "/admin",
@@ -29,5 +30,11 @@ export default async function AdminBackupPage() {
 
   const files = await adminBackupService.list();
 
-  return <BackupView initial={files} />;
+  return (
+    <BackupView
+      initial={files}
+      canRestore={can(admin, Permission.RESTORE_BACKUP)}
+      adminTwoFactorEnabled={admin.twoFactorEnabled}
+    />
+  );
 }
