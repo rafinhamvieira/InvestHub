@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { hasDatabase, prisma, resetDatabase, createUser, TEST_DATABASE_URL } from "./helpers";
+import { prisma, resetDatabase, createUser, TEST_DATABASE_URL } from "./helpers";
 
 // O client do serviço precisa apontar para o banco de teste antes de qualquer import dele.
 process.env.DATABASE_URL = TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -38,7 +38,7 @@ function daysAgo(days: number): Date {
   return date;
 }
 
-describe.skipIf(!hasDatabase)("lançamento de transações (banco real)", () => {
+describe("lançamento de transações (banco real)", () => {
   beforeEach(resetDatabase);
   afterAll(async () => {
     await prisma.$disconnect();
@@ -133,7 +133,7 @@ describe.skipIf(!hasDatabase)("lançamento de transações (banco real)", () => 
   });
 });
 
-describe.skipIf(!hasDatabase)("renda fixa (banco real)", () => {
+describe("renda fixa (banco real)", () => {
   beforeEach(resetDatabase);
 
   const cdb = {

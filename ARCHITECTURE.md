@@ -94,6 +94,8 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 - **Playwright**: testes E2E de fluxos críticos (login, cadastro).
 
 
+**Teste que não roda não é teste.** A suíte de integração se declarava ignorada sem `TEST_DATABASE_URL`, e foi assim que um defeito real na verificação da trilha atravessou meses — havia um caso que o pegava, e ele nunca executou. Hoje a ausência de banco é falha, com o comando na mensagem; o `global-setup` migra o schema sozinho e recusa banco cujo nome não contenha "test", porque a suíte apaga todas as tabelas antes de cada caso.
+
 ## 9. Painel administrativo (separado do produto)
 
 Área `/admin` com layout, navegação e fronteira de dados próprios. Regras que a sustentam:

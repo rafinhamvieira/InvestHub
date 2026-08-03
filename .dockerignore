@@ -7,7 +7,9 @@ node_modules
 coverage
 playwright-report
 test-results
-tests
+# `tests` entra no contexto de propósito: é o que permite rodar a suíte de integração no
+# servidor, dentro do serviço `migrate`, contra o Postgres do compose. Não chega na imagem
+# final — o estágio `runner` copia apenas o build, o prisma e o cliente gerado.
 *.md
 .env
 .env.local

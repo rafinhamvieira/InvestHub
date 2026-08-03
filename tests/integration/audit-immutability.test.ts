@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { hasDatabase, prisma, resetDatabase, createUser } from "./helpers";
+import { prisma, resetDatabase, createUser } from "./helpers";
 
 /**
  * O que só o banco pode provar.
@@ -7,7 +7,7 @@ import { hasDatabase, prisma, resetDatabase, createUser } from "./helpers";
  * Imutabilidade e encadeamento vivem em triggers do Postgres — teste com mock não diria
  * nada sobre eles. Aqui o SQL é exercitado de verdade.
  */
-describe.skipIf(!hasDatabase)("trilha de auditoria no banco", () => {
+describe("trilha de auditoria no banco", () => {
   beforeEach(resetDatabase);
   afterAll(async () => {
     await prisma.$disconnect();

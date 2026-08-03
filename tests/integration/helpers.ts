@@ -3,15 +3,22 @@ import { PrismaClient } from "@prisma/client";
 /**
  * Utilidades dos testes de integração.
  *
- * O banco é apontado por `TEST_DATABASE_URL` e **nunca** pelo `DATABASE_URL` de verdade —
- * a limpeza entre testes apaga tabelas inteiras, e um engano aqui custaria a carteira do
- * usuário. Sem a variável, os testes se declaram ignorados.
+ * O banco é apontado por `TEST_DATABASE_URL` e **nunca** pelo `DATABASE_URL` de verdade — a
+ * limpeza entre testes apaga tabelas inteiras, e um engano aqui custaria a carteira do
+ * usuário. O `global-setup` recusa rodar sem a variável, com o mesmo banco da aplicação ou
+ * com um nome que não pareça de teste.
+ *
+ * A conferência se repete aqui porque este módulo cria o cliente: sem ela, alguém que
+ * chamasse o vitest sem o config certo abriria conexão para um lugar não conferido.
  */
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
-export const hasDatabase = Boolean(TEST_DATABASE_URL);
+
+if (!TEST_DATABASE_URL) {
+  throw new Error("TEST_DATABASE_URL não definida — use `npm run test:integration`.");
+}
 
 export const prisma = new PrismaClient({
-  datasources: { db: { url: TEST_DATABASE_URL ?? "postgresql://invalid" } },
+  datasources: { db: { url: TEST_DATABASE_URL } },
 });
 
 /** Apaga os dados na ordem das dependências. Roda antes de cada teste. */

@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { hasDatabase, prisma, resetDatabase, createUser } from "./helpers";
+import { prisma, resetDatabase, createUser } from "./helpers";
 
-describe.skipIf(!hasDatabase)("sessões (banco real)", () => {
+describe("sessões (banco real)", () => {
   beforeEach(resetDatabase);
   afterAll(async () => {
     await prisma.$disconnect();
