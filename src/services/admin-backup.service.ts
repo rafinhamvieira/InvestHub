@@ -17,6 +17,7 @@ import { createGzip } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { logger } from "@/lib/logger";
 import { buildBackupName, resolveBackupPath } from "@/utils/backup-file";
+import { toLibpqUrl } from "@/utils/database-url";
 import type { BackupFile } from "@/types/admin";
 
 export class BackupError extends Error {
@@ -76,7 +77,9 @@ export const adminBackupService = {
     const finalPath = path.join(directory, name);
     const tempPath = `${finalPath}.part`;
 
-    const dump = spawn("pg_dump", ["--no-owner", "--no-privileges", databaseUrl], {
+    // A URL vai limpa dos parâmetros do Prisma: o libpq recusa a conexão inteira ao topar
+    // com `schema=public`, e o erro que chega é sobre a URI, não sobre o banco.
+    const dump = spawn("pg_dump", ["--no-owner", "--no-privileges", toLibpqUrl(databaseUrl)], {
       stdio: ["ignore", "pipe", "pipe"],
     });
 

@@ -52,6 +52,12 @@ export interface AuditPage {
 /** Resultado da verificação da cadeia de integridade. */
 export interface IntegrityReport {
   totalRecords: number;
+  /**
+   * Registros do começo da trilha gravados antes de a cadeia existir — a migração que criou
+   * o trigger não preencheu o que já estava na tabela. Ficam de fora da verificação, e o
+   * laudo os declara em vez de tratá-los como adulteração.
+   */
+  unchainedRecords: number;
   /** Último checkpoint cujo HMAC confere. */
   lastValidCheckpoint: { seq: string; createdAt: string } | null;
   /** Primeiro registro com hash divergente; null quando a cadeia está íntegra. */

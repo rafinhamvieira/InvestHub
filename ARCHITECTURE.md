@@ -119,7 +119,9 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 
 **Política de falha:** evento crítico de segurança (login, senha, MFA, e-mail, cargos, restauração) aborta a operação se o log não gravar; evento comum (perfil, preferências) registra o erro nos logs da aplicação e segue.
 
-**Verificação:** `GET /api/admin/audit/integrity` (`VERIFY_AUDIT_INTEGRITY`, só SUPER_ADMIN) recomputa a cadeia e devolve total de registros, último checkpoint válido, primeiro registro divergente com hash esperado × encontrado e sequências ausentes. Somente leitura.
+**Verificação:** `GET /api/admin/audit/integrity` (`VERIFY_AUDIT_INTEGRITY`, só SUPER_ADMIN) recomputa a cadeia e devolve total de registros, registros anteriores à cadeia, último checkpoint válido, primeiro registro divergente com hash esperado × encontrado e sequências ausentes. Somente leitura.
+
+**Registros anteriores à cadeia.** A tabela existia antes do trigger, e a migração acrescentou as colunas de hash sem preencher o que já estava lá. Esses registros formam um prefixo sem hash: são contados e declarados no laudo, não verificados. Hash vazio depois do início da cadeia é divergência — o trigger não produz isso e o banco recusa `UPDATE`. Preencher os antigos retroativamente foi descartado: daria cadeia coerente sobre dados nunca protegidos, isto é, garantia fabricada.
 
 ## 11. Sessões
 

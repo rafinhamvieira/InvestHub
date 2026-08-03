@@ -116,6 +116,15 @@ function IntegrityPanel() {
                   {report.valid ? "nenhuma divergência" : "cadeia comprometida"} · verificado
                   em {new Date(report.verifiedAt).toLocaleString("pt-BR")} ({report.durationMs} ms)
                 </p>
+                {report.unchainedRecords > 0 && (
+                  <p>
+                    {report.unchainedRecords.toLocaleString("pt-BR")}{" "}
+                    {report.unchainedRecords === 1 ? "registro é anterior" : "registros são anteriores"}{" "}
+                    à cadeia e {report.unchainedRecords === 1 ? "fica" : "ficam"} fora da
+                    verificação: foram gravados antes de o encadeamento existir. A conferência
+                    começa no primeiro registro com hash.
+                  </p>
+                )}
                 <p>
                   Último checkpoint válido:{" "}
                   {report.lastValidCheckpoint

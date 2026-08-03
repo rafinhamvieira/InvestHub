@@ -64,6 +64,97 @@ export function computeHash(row: ChainRow, prevHash: string | null): string {
   return createHash("sha256").update(chainPayload(row, prevHash)).digest("hex");
 }
 
+export interface ChainState {
+  /** Maior `seq` já lida — cursor da paginação. */
+  cursor: bigint;
+  prevHash: string | null;
+  expectedSeq: bigint | null;
+  missingSequences: string[];
+  firstInvalidRecord: IntegrityReport["firstInvalidRecord"];
+  /** Registros gravados antes de a cadeia existir. Ver `walkChain`. */
+  unchainedRecords: number;
+  /** Verdadeiro depois do primeiro registro que carrega hash. */
+  chainStarted: boolean;
+}
+
+export function initialChainState(): ChainState {
+  return {
+    cursor: 0n,
+    prevHash: null,
+    expectedSeq: null,
+    missingSequences: [],
+    firstInvalidRecord: null,
+    unchainedRecords: 0,
+    chainStarted: false,
+  };
+}
+
+/** Buracos reportados por verificação — o suficiente para provar remoção sem inundar a tela. */
+const MAX_MISSING_REPORTED = 50;
+
+/**
+ * Percorre um lote da trilha e devolve o estado atualizado. Pura: recebe linhas, não lê banco.
+ *
+ * **Registros anteriores à cadeia.** A tabela `audit_logs` existia antes da migração que
+ * criou o trigger de encadeamento, e essa migração acrescentou as colunas `prevHash`/`hash`
+ * sem preencher o que já estava lá — o trigger é `BEFORE INSERT`, só alcança o que vem
+ * depois. Esses registros têm hash nulo, e compará-los acusaria adulteração onde houve
+ * apenas história anterior ao mecanismo.
+ *
+ * Eles são contados e pulados enquanto formam o **prefixo** da trilha. Hash nulo que
+ * apareça depois de um registro encadeado continua sendo divergência, e das graves: o
+ * trigger não tem caminho para produzir isso, e UPDATE é recusado pelo banco.
+ *
+ * O `prevHash` segue nulo ao longo desse prefixo de propósito — é exatamente o que o
+ * trigger leu ao encadear o primeiro registro depois deles.
+ *
+ * Preencher os hashes antigos de forma retroativa seria pior que o alarme falso: produziria
+ * uma cadeia coerente sobre dados que nunca estiveram protegidos, ou seja, garantia
+ * fabricada. A trilha não é reescrita; o laudo é que passa a dizer a verdade inteira.
+ */
+export function walkChain(rows: ChainRow[], state: ChainState): ChainState {
+  const next: ChainState = { ...state, missingSequences: [...state.missingSequences] };
+
+  for (const row of rows) {
+    if (
+      next.expectedSeq !== null &&
+      row.seq !== next.expectedSeq &&
+      next.missingSequences.length < MAX_MISSING_REPORTED
+    ) {
+      // Buraco na sequência: o `seq` é gerado por sequência do banco e nunca reutilizado,
+      // então salto significa registro removido — mesmo que a cadeia siga coerente.
+      for (let missing = next.expectedSeq; missing < row.seq; missing++) {
+        next.missingSequences.push(missing.toString());
+      }
+    }
+    next.expectedSeq = row.seq + 1n;
+    next.cursor = row.seq;
+
+    if (!next.chainStarted && !row.hash) {
+      next.unchainedRecords += 1;
+      continue;
+    }
+
+    next.chainStarted = true;
+
+    if (!next.firstInvalidRecord) {
+      const expectedHash = computeHash(row, next.prevHash);
+      if (row.hash !== expectedHash) {
+        next.firstInvalidRecord = {
+          seq: row.seq.toString(),
+          expectedHash,
+          foundHash: row.hash,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }
+    }
+
+    next.prevHash = row.hash;
+  }
+
+  return next;
+}
+
 function signCheckpoint(headHash: string): string | null {
   const key = process.env.AUDIT_HMAC_KEY;
   if (!key) return null;
@@ -153,52 +244,25 @@ export const auditIntegrityService = {
       }
     }
 
-    let cursor = 0n;
-    let prevHash: string | null = null;
-    let expectedSeq: bigint | null = null;
-    const missingSequences: string[] = [];
-    let firstInvalidRecord: IntegrityReport["firstInvalidRecord"] = null;
+    let state = initialChainState();
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const rows = await auditLogRepository.chainSlice(cursor, CHAIN_BATCH);
+      const rows = await auditLogRepository.chainSlice(state.cursor, CHAIN_BATCH);
       if (rows.length === 0) break;
 
-      for (const row of rows) {
-        if (expectedSeq !== null && row.seq !== expectedSeq && missingSequences.length < 50) {
-          // Buraco na sequência: o `seq` é gerado por sequência do banco e nunca reutilizado,
-          // então salto significa registro removido — mesmo que a cadeia siga coerente.
-          for (let missing = expectedSeq; missing < row.seq; missing++) {
-            missingSequences.push(missing.toString());
-          }
-        }
-        expectedSeq = row.seq + 1n;
-
-        if (!firstInvalidRecord) {
-          const expectedHash = computeHash(row, prevHash);
-          if (row.hash !== expectedHash) {
-            firstInvalidRecord = {
-              seq: row.seq.toString(),
-              expectedHash,
-              foundHash: row.hash,
-              createdAt: row.createdAt.toISOString(),
-            };
-          }
-        }
-
-        prevHash = row.hash;
-        cursor = row.seq;
-      }
+      state = walkChain(rows, state);
     }
 
     return {
       totalRecords: total,
+      unchainedRecords: state.unchainedRecords,
       lastValidCheckpoint,
-      firstInvalidRecord,
-      missingSequences,
+      firstInvalidRecord: state.firstInvalidRecord,
+      missingSequences: state.missingSequences,
       verifiedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
-      valid: firstInvalidRecord === null && missingSequences.length === 0,
+      valid: state.firstInvalidRecord === null && state.missingSequences.length === 0,
     };
   },
 };
