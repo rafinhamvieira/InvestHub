@@ -21,15 +21,23 @@ import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { sendEmail, alertEmailTemplate } from "@/lib/email";
 import { notificationRepository } from "@/repositories/notification.repository";
+import { platformSettingsService } from "@/services/platform-settings.service";
 
 const LAST_SUCCESS_KEY = "sync:lastSuccess";
 const FAILURES_KEY = "sync:failures";
 const ALERT_COOLDOWN_KEY = "sync:alerted";
 
-/** Quantas falhas seguidas antes de avisar. Uma falha isolada é ruído de rede. */
-const FAILURE_THRESHOLD = Number(process.env.SYNC_FAILURE_THRESHOLD ?? 3);
-/** Sem sucesso por este tempo, o job é considerado parado. Ciclo padrão é de 30 min. */
-const STALE_HOURS = Number(process.env.SYNC_STALE_HOURS ?? 3);
+/**
+ * Limiares ajustáveis pelo painel — lidos a cada uso, e não uma vez na carga do módulo.
+ * Mudança na tela precisa valer no próximo ciclo, sem recriar o container.
+ */
+async function thresholds() {
+  const [failureThreshold, staleHours] = await Promise.all([
+    platformSettingsService.get("syncFailureThreshold"),
+    platformSettingsService.get("syncStaleHours"),
+  ]);
+  return { failureThreshold, staleHours };
+}
 /** Silêncio entre avisos: o problema costuma durar horas, o aviso não precisa repetir. */
 const ALERT_COOLDOWN_SECONDS = 6 * 60 * 60;
 
@@ -45,10 +53,11 @@ export const syncHealthService = {
 
   async recordFailure(reason: string): Promise<void> {
     try {
+      const { failureThreshold } = await thresholds();
       const failures = await redis.incr(FAILURES_KEY);
       logger.warn("Sincronização falhou", { failures, reason });
 
-      if (failures >= FAILURE_THRESHOLD) {
+      if (failures >= failureThreshold) {
         await this.notify(
           "Sincronização de mercado falhando",
           `A atualização de dados falhou ${failures} vezes seguidas. Último erro: ${reason}`,
@@ -70,8 +79,9 @@ export const syncHealthService = {
       const lastSuccess = await redis.get(LAST_SUCCESS_KEY);
       if (!lastSuccess) return { lastSuccessAt: null, stale: false };
 
+      const { staleHours } = await thresholds();
       const elapsedHours = (Date.now() - new Date(lastSuccess).getTime()) / (60 * 60 * 1000);
-      const stale = elapsedHours > STALE_HOURS;
+      const stale = elapsedHours > staleHours;
 
       if (stale) {
         await this.notify(
@@ -103,7 +113,7 @@ export const syncHealthService = {
     staleHours: number;
     failureThreshold: number;
   }> {
-    const thresholds = { staleHours: STALE_HOURS, failureThreshold: FAILURE_THRESHOLD };
+    const limits = await thresholds();
 
     try {
       const [lastSuccessAt, failures] = await Promise.all([
@@ -111,9 +121,9 @@ export const syncHealthService = {
         redis.get(FAILURES_KEY),
       ]);
 
-      return { lastSuccessAt, failures: Number(failures ?? 0), ...thresholds };
+      return { lastSuccessAt, failures: Number(failures ?? 0), ...limits };
     } catch {
-      return { lastSuccessAt: null, failures: 0, ...thresholds };
+      return { lastSuccessAt: null, failures: 0, ...limits };
     }
   },
 

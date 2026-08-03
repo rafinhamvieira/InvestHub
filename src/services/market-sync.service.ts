@@ -11,6 +11,7 @@ import { fixedIncomeService } from "@/services/fixed-income.service";
 import { syncHealthService } from "@/services/sync-health.service";
 import { accountCleanupService } from "@/services/account-cleanup.service";
 import { isFixedIncomeType } from "@/schemas/transaction.schema";
+import { platformSettingsService } from "@/services/platform-settings.service";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -36,22 +37,7 @@ interface SyncTarget {
   type: AssetType;
 }
 
-/**
- * Quantos ativos têm os fundamentos atualizados por ciclo.
- *
- * Com o padrão de 30 min entre ciclos, 4 por rodada dão ~192 requisições/dia — logo abaixo
- * das 200 do plano gratuito do provedor de fundamentos. Aumente junto com o plano.
- */
-const FUNDAMENTALS_PER_CYCLE = Number(process.env.FUNDAMENTALS_PER_CYCLE ?? 4);
 
-/**
- * Quantos ativos têm os proventos importados por ciclo, fora os que alguém acompanha.
- *
- * As fontes são gratuitas, então o limite aqui é educação com quem hospeda os dados: 10
- * por ciclo são 20 requisições a cada 30 min. Cobre o catálogo em algumas semanas e dá
- * Dividend Yield ao screener sem depender do provedor pago.
- */
-const DIVIDENDS_PER_CYCLE = Number(process.env.DIVIDENDS_PER_CYCLE ?? 10);
 
 /** Backfill de histórico quando o ativo tem menos de 2 candles nos últimos 7 dias. */
 const HISTORY_STALE_DAYS = 7;
@@ -206,13 +192,16 @@ export const marketSyncService = {
    * inteiro de uma vez é impossível — a rotação cobre a base ao longo dos dias em vez de
    * gastar a cota sempre nos mesmos ativos.
    */
-  async refreshStaleFundamentals(limit = FUNDAMENTALS_PER_CYCLE): Promise<number> {
-    if (limit <= 0 || !getFundamentalsProvider()) return 0;
+  async refreshStaleFundamentals(limit?: number): Promise<number> {
+    // Lido do painel a cada ciclo: quem assina o plano pago do provedor aumenta a cota na
+    // tela, sem recriar container.
+    const size = limit ?? (await platformSettingsService.get("fundamentalsPerCycle"));
+    if (size <= 0 || !getFundamentalsProvider()) return 0;
 
     try {
       // BDR fica de fora: o provedor não cobre nenhum deles, e são 675 ativos que só
       // consumiriam a cota diária sem devolver indicador nenhum.
-      const assets = await assetRepository.listStaleFundamentals(limit, ["STOCK", "FII"]);
+      const assets = await assetRepository.listStaleFundamentals(size, ["STOCK", "FII"]);
       let updated = 0;
       for (const asset of assets) {
         if (await fetchAndStoreFundamentals(asset)) updated++;
@@ -251,7 +240,9 @@ export const marketSyncService = {
     const report = await this.syncAssets(assets);
     report.assetsCreated += catalog.assetsCreated;
     report.fundamentalsUpdated += await this.refreshStaleFundamentals();
-    report.dividendsUpserted += await dividendSyncService.syncStale(DIVIDENDS_PER_CYCLE);
+    report.dividendsUpserted += await dividendSyncService.syncStale(
+      await platformSettingsService.get("dividendsPerCycle"),
+    );
 
     // Renda fixa não tem cotação: o valor do dia sai da curva do indexador.
     try {

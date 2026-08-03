@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requirePermission, markStepUp, authorizationStatus, STEP_UP_TTL_SECONDS } from "@/lib/auth-guard";
+import { requirePermission, markStepUp, authorizationStatus, stepUpTtlSeconds } from "@/lib/auth-guard";
 import { Permission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/crypto";
@@ -80,5 +80,5 @@ export async function POST(request: Request) {
   }
 
   await markStepUp(admin.id);
-  return NextResponse.json({ ok: true, expiresInSeconds: STEP_UP_TTL_SECONDS });
+  return NextResponse.json({ ok: true, expiresInSeconds: await stepUpTtlSeconds() });
 }

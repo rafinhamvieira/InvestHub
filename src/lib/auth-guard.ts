@@ -21,6 +21,7 @@ import { can, Permission, type Principal } from "@/lib/permissions";
 import { getClientIp, getUserAgent } from "@/utils/request";
 import { auditService } from "@/services/audit.service";
 import { sessionService } from "@/services/session.service";
+import { platformSettingsService } from "@/services/platform-settings.service";
 import { AUDIT_ACTIONS } from "@/constants/audit";
 
 export class AuthorizationError extends Error {
@@ -38,8 +39,15 @@ export interface AdminContext extends Principal {
   twoFactorEnabled: boolean;
 }
 
-/** Janela em que a confirmação de senha continua valendo para ações críticas. */
-export const STEP_UP_TTL_SECONDS = Number(process.env.STEP_UP_TTL_SECONDS ?? 600);
+/**
+ * Janela em que a confirmação de senha continua valendo para ações críticas.
+ *
+ * Ajustável pelo painel, então lida a cada uso — e limitada a uma hora pelo registro de
+ * parâmetros: janela longa aproxima o painel de não ter step-up nenhum.
+ */
+export function stepUpTtlSeconds(): Promise<number> {
+  return platformSettingsService.get("stepUpTtlSeconds");
+}
 
 function stepUpKey(userId: string): string {
   return `stepup:${userId}`;
@@ -123,7 +131,8 @@ export async function currentPrincipal(): Promise<Principal | null> {
  * MFA, trocar e-mail de terceiro, mexer em cargo ou restaurar backup.
  */
 export async function markStepUp(userId: string): Promise<void> {
-  await redis.set(stepUpKey(userId), "1", "EX", STEP_UP_TTL_SECONDS).catch(() => null);
+  const ttl = await stepUpTtlSeconds();
+  await redis.set(stepUpKey(userId), "1", "EX", ttl).catch(() => null);
 }
 
 export async function hasStepUp(userId: string): Promise<boolean> {

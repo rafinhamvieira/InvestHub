@@ -24,6 +24,7 @@ import { logger } from "@/lib/logger";
 import { AUDIT_ACTIONS } from "@/constants/audit";
 import { canPerform, POLICY_MESSAGES, type AdminAction } from "@/utils/admin-policy";
 import { describeSession, parseUserAgent } from "@/utils/user-agent";
+import { platformSettingsService } from "@/services/platform-settings.service";
 import type {
   AdminLoginRow,
   AdminSessionRow,
@@ -58,14 +59,12 @@ const MAX_PAGE_SIZE = 100;
  * Quanto falta para o cadastro não confirmado ser removido automaticamente.
  * Mostrar o prazo evita a surpresa de ver uma conta sumir da lista sem explicação.
  */
-function hoursUntilRemoval(user: {
-  emailVerified: Date | null;
-  role: Role;
-  createdAt: Date;
-}): number | null {
+function hoursUntilRemoval(
+  user: { emailVerified: Date | null; role: Role; createdAt: Date },
+  ttlHours: number,
+): number | null {
   if (user.emailVerified !== null || hasAdminAccess({ id: "", role: user.role })) return null;
 
-  const ttlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
   const elapsed = (Date.now() - user.createdAt.getTime()) / (60 * 60 * 1000);
   return Math.max(0, Math.ceil(ttlHours - elapsed));
 }
@@ -90,6 +89,7 @@ function toUserRow(
   },
   lastLoginAt: Date | null,
   activeSessions: number,
+  ttlHours: number,
 ): AdminUserRow {
   return {
     id: user.id,
@@ -102,7 +102,7 @@ function toUserRow(
       user.lockedUntil && user.lockedUntil > new Date() ? user.lockedUntil.toISOString() : null,
     failedLoginAttempts: user.failedLoginAttempts,
     lastLoginAt: lastLoginAt?.toISOString() ?? null,
-    expiresInHours: hoursUntilRemoval(user),
+    expiresInHours: hoursUntilRemoval(user, ttlHours),
     activeSessions,
     createdAt: user.createdAt.toISOString(),
   };
@@ -153,13 +153,14 @@ export const adminUserService = {
     const { rows, total } = await userRepository.listForAdmin({ ...options, page, pageSize });
     // Duas consultas em lote para a página inteira — nunca uma por linha.
     const ids = rows.map((row) => row.id);
-    const [lastLogins, activeSessions] = await Promise.all([
+    const [lastLogins, activeSessions, ttlHours] = await Promise.all([
       loginAuditRepository.lastSuccessByUsers(ids),
       userSessionRepository.countActiveByUsers(ids),
+      platformSettingsService.get("unverifiedAccountTtlHours"),
     ]);
 
     const users = rows.map((row) =>
-      toUserRow(row, lastLogins.get(row.id) ?? null, activeSessions.get(row.id) ?? 0),
+      toUserRow(row, lastLogins.get(row.id) ?? null, activeSessions.get(row.id) ?? 0, ttlHours),
     );
 
     return { users, total, page, pageSize };
@@ -184,7 +185,7 @@ export const adminUserService = {
   async detail(userId: string): Promise<AdminUserDetail> {
     const target = await loadTarget(userId);
 
-    const [sessions, logins, lastLogins, activeSessions, trail] = await Promise.all([
+    const [sessions, logins, lastLogins, activeSessions, trail, ttlHours] = await Promise.all([
       userSessionRepository.listByUser(userId),
       loginAuditRepository.listByUser(userId, 20),
       loginAuditRepository.lastSuccessByUsers([userId]),
@@ -192,12 +193,13 @@ export const adminUserService = {
       // A trilha filtrada por conta cobre os dois lados: o que fizeram com ela e o que ela
       // fez. Para uma conta comum o segundo conjunto é o histórico de login e senha.
       auditService.list({ userId, pageSize: 25 }),
+      platformSettingsService.get("unverifiedAccountTtlHours"),
     ]);
 
     const now = new Date();
 
     return {
-      user: toUserRow(target, lastLogins.get(userId) ?? null, activeSessions.get(userId) ?? 0),
+      user: toUserRow(target, lastLogins.get(userId) ?? null, activeSessions.get(userId) ?? 0, ttlHours),
       sessions: sessions.map((session): AdminSessionRow => {
         const { browser, os, location, ...rest } = session;
 

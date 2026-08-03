@@ -294,6 +294,22 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// Parâmetro da plataforma alterado pelo painel.
+///
+/// Guarda apenas a **diferença** em relação ao padrão: só existe linha para o que foi
+/// mudado, e apagar a linha devolve o valor do ambiente ou do código. O registro do que é
+/// ajustável, com rótulo e limites, vive em `src/config/platform-settings.ts` — aqui não há
+/// como saber se um valor faz sentido.
+model PlatformSetting {
+  key       String   @id
+  value     Int
+  updatedAt DateTime @updatedAt
+  /// Quem alterou. A trilha de auditoria guarda o histórico; isto é só o último.
+  updatedBy String?
+
+  @@map("platform_settings")
+}
+
 /// Amostra periódica da saúde da plataforma, coletada pelo healthcheck do Docker.
 ///
 /// O resumo da Etapa 2 responde "como está agora"; esta tabela responde "como esteve".

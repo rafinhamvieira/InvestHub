@@ -18,16 +18,20 @@ import { logger } from "@/lib/logger";
 import { auditService } from "@/services/audit.service";
 import { AUDIT_ACTIONS } from "@/constants/audit";
 import { hasAdminAccess } from "@/lib/permissions";
+import { platformSettingsService } from "@/services/platform-settings.service";
+import { PLATFORM_SETTINGS } from "@/config/platform-settings";
 import type { Role } from "@prisma/client";
 
-/** Prazo para confirmar o e-mail. */
-const UNVERIFIED_TTL_HOURS = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
-
-/** Decide se o cadastro venceu o prazo. Puro, para o limite ficar testável. */
+/**
+ * Decide se o cadastro venceu o prazo. Puro, para o limite ficar testável.
+ *
+ * O prazo entra por parâmetro porque ele é ajustável pelo painel: lê-lo aqui dentro tornaria
+ * a função assíncrona e dependente de banco, que é exatamente o que ela evita ser.
+ */
 export function isExpiredUnverified(
   user: { emailVerified: Date | null; createdAt: Date; role: string },
   reference: Date,
-  ttlHours = UNVERIFIED_TTL_HOURS,
+  ttlHours = PLATFORM_SETTINGS.unverifiedAccountTtlHours.fallback,
 ): boolean {
   if (user.emailVerified !== null) return false;
   if (hasAdminAccess({ id: "", role: user.role as Role })) return false;
@@ -39,7 +43,8 @@ export function isExpiredUnverified(
 export const accountCleanupService = {
   /** Remove os cadastros vencidos. Devolve quantos saíram. */
   async removeUnverified(reference = new Date()): Promise<number> {
-    const cutoff = new Date(reference.getTime() - UNVERIFIED_TTL_HOURS * 60 * 60 * 1000);
+    const ttlHours = await platformSettingsService.get("unverifiedAccountTtlHours");
+    const cutoff = new Date(reference.getTime() - ttlHours * 60 * 60 * 1000);
 
     const candidates = await prisma.user.findMany({
       where: {

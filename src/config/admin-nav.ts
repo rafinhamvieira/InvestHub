@@ -3,6 +3,7 @@ import {
   Activity,
   DatabaseBackup,
   FileText,
+  SlidersHorizontal,
   LayoutDashboard,
   ScrollText,
   ShieldCheck,
@@ -67,6 +68,13 @@ export const ADMIN_NAV: AdminNavItem[] = [
     icon: FileText,
     description: "O que a aplicação registrou, com busca e filtro por nível",
     permission: Permission.VIEW_APPLICATION_LOGS,
+  },
+  {
+    title: "Configurações",
+    href: "/admin/settings",
+    icon: SlidersHorizontal,
+    description: "Parâmetros de operação, sem recriar container",
+    permission: Permission.MANAGE_PLATFORM,
   },
   {
     title: "Backup",
