@@ -23,6 +23,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { StepUpDialog } from "@/components/admin/step-up-dialog";
 import {
@@ -373,19 +380,21 @@ export function UsersView({
 
               {pending.action === "SET_ROLE" && (
                 <div className="space-y-2">
-                  <Label htmlFor="action-role">Cargo</Label>
-                  <select
-                    id="action-role"
-                    className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                    value={inputValue}
-                    onChange={(event) => setInputValue(event.target.value)}
-                  >
-                    {ROLE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {ROLE_LABELS[option]}
-                      </option>
-                    ))}
-                  </select>
+                  <Label>Cargo</Label>
+                  {/* O `select` nativo desenha a lista pelo navegador, que ignora o tema —
+                      no escuro saía fundo branco com texto claro, ilegível. */}
+                  <Select value={inputValue} onValueChange={setInputValue}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {ROLE_LABELS[option]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground">
                     Cargo atual: {ROLE_LABELS[pending.user.role]}.
                   </p>
