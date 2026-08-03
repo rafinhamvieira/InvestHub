@@ -10,6 +10,7 @@ import { dividendSyncService } from "@/services/dividend-sync.service";
 import { fixedIncomeService } from "@/services/fixed-income.service";
 import { syncHealthService } from "@/services/sync-health.service";
 import { accountCleanupService } from "@/services/account-cleanup.service";
+import { isFixedIncomeType } from "@/schemas/transaction.schema";
 import type { AssetType } from "@prisma/client";
 
 export interface SyncReport {
@@ -332,9 +333,23 @@ export const marketSyncService = {
     return this.syncAssets([...byId.values()], userId);
   },
 
+  /**
+   * Sincroniza contra os provedores externos.
+   *
+   * **Renda fixa fica de fora, e a exclusão é a correção de um desperdício real.** Título
+   * não tem cotação, fundamento nem provento em provedor nenhum: o valor sai da curva do
+   * BCB, calculado pelo `fixedIncomeService`. Enquanto eles entravam aqui, cada ciclo
+   * consultava o provedor de fundamentos com tickers como `CDB-TESTE-5E128` — resposta 422,
+   * cota queimada das 200 diárias que já são o gargalo da cobertura do catálogo — e ainda
+   * pedia proventos à B3 e ao Yahoo para papéis que nunca terão. De quebra, cada título
+   * caía em `failedTickers` por não constar no catálogo de cotações, enchendo a lista de
+   * falhas esperadas e escondendo as de verdade.
+   */
   async syncAssets(assets: SyncTarget[], userId?: string): Promise<SyncReport> {
+    const tradable = assets.filter((asset) => !isFixedIncomeType(asset.type));
+
     const report: SyncReport = {
-      requested: assets.length,
+      requested: tradable.length,
       quotesUpdated: 0,
       fundamentalsUpdated: 0,
       assetsCreated: 0,
@@ -346,7 +361,7 @@ export const marketSyncService = {
       alertsTriggered: 0,
     };
 
-    if (assets.length === 0) return report;
+    if (tradable.length === 0) return report;
 
     // ------------------------------------------------------------
     // 1. Preços em massa — uma única requisição traz o mercado inteiro.
@@ -355,7 +370,7 @@ export const marketSyncService = {
     const catalog = await market.listAll();
     const catalogByTicker = new Map(catalog.map((item) => [item.ticker, item]));
 
-    for (const asset of assets) {
+    for (const asset of tradable) {
       const item = catalogByTicker.get(asset.ticker);
       if (!item) {
         report.failedTickers.push(asset.ticker);
@@ -395,7 +410,7 @@ export const marketSyncService = {
     // ------------------------------------------------------------
     // 2. Fundamentos — uma requisição por ativo, com cache de 12h.
     // ------------------------------------------------------------
-    for (const asset of assets) {
+    for (const asset of tradable) {
       if (await fetchAndStoreFundamentals(asset)) report.fundamentalsUpdated++;
     }
 
@@ -408,14 +423,14 @@ export const marketSyncService = {
     // ------------------------------------------------------------
     try {
       const dividendReport = await dividendSyncService.syncAssets(
-        assets.map((asset) => ({ id: asset.id, ticker: asset.ticker, type: asset.type })),
+        tradable.map((asset) => ({ id: asset.id, ticker: asset.ticker, type: asset.type })),
       );
       report.dividendsUpserted += dividendReport.created;
     } catch (error) {
       logger.warn("Falha ao sincronizar proventos", { error: (error as Error).message });
     }
 
-    for (const asset of assets) {
+    for (const asset of tradable) {
       if (!catalogByTicker.has(asset.ticker)) continue;
       try {
         const dividends = await market.getDividends(asset.ticker);
@@ -434,7 +449,7 @@ export const marketSyncService = {
     // ------------------------------------------------------------
     // 4. Backfill de histórico de cotações.
     // ------------------------------------------------------------
-    for (const asset of assets) {
+    for (const asset of tradable) {
       if (!catalogByTicker.has(asset.ticker)) continue;
       try {
         const recent = await assetPriceRepository.countRecent(asset.id, HISTORY_STALE_DAYS);
