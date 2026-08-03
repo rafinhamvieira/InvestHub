@@ -93,6 +93,7 @@ export function syncCheck(snapshot: SyncSnapshot, now: Date): HealthCheck {
   if (age > snapshot.staleHours) {
     return {
       ...base,
+      ageHours: age,
       status: "down",
       detail: `Último sucesso ${describeAge(age)}, acima das ${snapshot.staleHours} h toleradas. Os preços estão congelados.`,
     };
@@ -101,6 +102,7 @@ export function syncCheck(snapshot: SyncSnapshot, now: Date): HealthCheck {
   if (snapshot.failures >= snapshot.failureThreshold) {
     return {
       ...base,
+      ageHours: age,
       status: "warn",
       detail: `${snapshot.failures} falhas seguidas desde o último sucesso, ${describeAge(age)}.`,
     };
@@ -108,6 +110,7 @@ export function syncCheck(snapshot: SyncSnapshot, now: Date): HealthCheck {
 
   return {
     ...base,
+    ageHours: age,
     status: "ok",
     detail:
       snapshot.failures > 0
@@ -140,17 +143,18 @@ export function backupCheck(
   const age = hoursBetween(new Date(newestAt), now);
 
   if (age > downHours) {
-    return { ...base, status: "down", detail: `O backup mais recente é de ${describeAge(age)}.` };
+    return { ...base, ageHours: age, status: "down", detail: `O backup mais recente é de ${describeAge(age)}.` };
   }
   if (age > warnHours) {
     return {
       ...base,
+      ageHours: age,
       status: "warn",
       detail: `O backup mais recente é de ${describeAge(age)} — o ciclo diário não rodou.`,
     };
   }
 
-  return { ...base, status: "ok", detail: `Backup mais recente ${describeAge(age)}.` };
+  return { ...base, ageHours: age, status: "ok", detail: `Backup mais recente ${describeAge(age)}.` };
 }
 
 export interface AuditSnapshot {

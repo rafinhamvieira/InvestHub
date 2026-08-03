@@ -294,6 +294,41 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// Amostra periódica da saúde da plataforma, coletada pelo healthcheck do Docker.
+///
+/// O resumo da Etapa 2 responde "como está agora"; esta tabela responde "como esteve".
+/// A coleta pega carona no `/api/health`, que o Docker já chama a cada 15 segundos — o
+/// mesmo truque que o vigia da sincronização usa para não precisar de agendador próprio.
+///
+/// **Buraco na série é registro de queda.** Com o banco fora do ar não há como gravar a
+/// amostra que diria isso; a ausência dela no gráfico é o que conta a história.
+model HealthSample {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// Pior estado entre as verificações no momento da amostra: ok | warn | down.
+  status String
+
+  /// Tempo de resposta em milissegundos. Nulo quando a sondagem falhou.
+  databaseMs Int?
+  cacheMs    Int?
+
+  /// Horas desde o último sucesso da sincronização; nulo quando nunca houve.
+  syncAgeHours Float?
+  /// Falhas seguidas acumuladas até o momento da amostra.
+  syncFailures Int    @default(0)
+  /// Horas desde o backup mais recente; nulo quando não há nenhum.
+  backupAgeHours Float?
+
+  /// Fração de 0 a 1 dos ativos com fundamentos — o avanço da rotação, dia a dia.
+  coverage Float?
+  /// Segundos no ar do processo. Queda no valor denuncia reinício.
+  uptimeSeconds Int @default(0)
+
+  @@index([createdAt])
+  @@map("health_samples")
+}
+
 /// Âncora periódica da cadeia de auditoria.
 ///
 /// Guarda o HMAC do hash de cabeça com uma chave que vive só no ambiente, nunca no banco.

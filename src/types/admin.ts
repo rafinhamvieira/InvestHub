@@ -58,6 +58,14 @@ export interface HealthCheck {
   detail: string;
   /** Presente só nas verificações que medem tempo de resposta. */
   latencyMs?: number;
+  /**
+   * Idade do que a verificação observa, em horas — último backup, último sucesso da
+   * sincronização.
+   *
+   * Existe para a série histórica ler o número em vez de extraí-lo do `detail`, que é prosa
+   * em português e mudaria de forma sem ninguém perceber que algo dependia dele.
+   */
+  ageHours?: number;
 }
 
 export interface HealthSummary {
@@ -137,6 +145,33 @@ export interface AppLogPage {
   pageSize: number;
   /** Nulo quando não há arquivo — sink desligado ou pasta sem permissão de escrita. */
   sizeBytes: number | null;
+}
+
+/** Um ponto da série histórica, já agregado pelo banco. */
+export interface MonitoringPoint {
+  at: string;
+  samples: number;
+  degraded: number;
+  databaseMsAvg: number | null;
+  databaseMsMax: number | null;
+  cacheMsAvg: number | null;
+  syncFailuresMax: number | null;
+  coverageAvg: number | null;
+}
+
+export interface MonitoringSeries {
+  range: "24h" | "7d" | "30d";
+  rangeLabel: string;
+  points: MonitoringPoint[];
+  availability: {
+    ratio: number;
+    collected: number;
+    expected: number;
+    degraded: number;
+    missing: number;
+  };
+  /** Minutos entre amostras — a tela usa para explicar o denominador. */
+  intervalMinutes: number;
 }
 
 export interface AdminDashboard {

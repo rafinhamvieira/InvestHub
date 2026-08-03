@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   DatabaseBackup,
   FileText,
   LayoutDashboard,
@@ -45,6 +46,13 @@ export const ADMIN_NAV: AdminNavItem[] = [
     icon: Users,
     description: "Cadastro, permissões e ações administrativas",
     permission: Permission.MANAGE_USERS,
+  },
+  {
+    title: "Monitoramento",
+    href: "/admin/monitoring",
+    icon: Activity,
+    description: "Disponibilidade, latência e cobertura ao longo do tempo",
+    permission: Permission.VIEW_SYSTEM_HEALTH,
   },
   {
     title: "Cargos",
