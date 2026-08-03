@@ -32,6 +32,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("UNLOCK"), reason }),
   z.object({ action: z.literal("GRANT_ADMIN"), reason }),
   z.object({ action: z.literal("REVOKE_ADMIN"), reason }),
+  z.object({ action: z.literal("REVOKE_SESSION"), sessionId: z.string().min(1).max(64), reason }),
+  z.object({ action: z.literal("FORCE_LOGOUT"), reason }),
 ]);
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -103,6 +105,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         break;
       case "REVOKE_ADMIN":
         await adminUserService.setRole(ctx, id, "USER");
+        break;
+      case "REVOKE_SESSION":
+        await adminUserService.revokeSession(ctx, id, parsed.data.sessionId);
+        break;
+      case "FORCE_LOGOUT":
+        await adminUserService.forceLogout(ctx, id);
         break;
     }
 

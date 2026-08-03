@@ -83,6 +83,17 @@ export const userRepository = {
     return prisma.user.update({ where: { id: userId }, data });
   },
 
+  /**
+   * Invalida em bloco os tokens nascidos antes desta marca.
+   *
+   * Método próprio, e não um campo a mais no `update` genérico: é a única escrita capaz de
+   * cortar o acesso de alguém em todos os dispositivos, e merece aparecer por nome em quem
+   * a chama.
+   */
+  invalidateSessionsBefore(userId: string, validFrom: Date): Promise<User> {
+    return prisma.user.update({ where: { id: userId }, data: { sessionsValidFrom: validFrom } });
+  },
+
   markEmailVerified(userId: string): Promise<User> {
     return prisma.user.update({ where: { id: userId }, data: { emailVerified: new Date() } });
   },

@@ -16,7 +16,9 @@ export type AdminAction =
   | "RESET_TWO_FACTOR"
   | "UNLOCK"
   | "GRANT_ADMIN"
-  | "REVOKE_ADMIN";
+  | "REVOKE_ADMIN"
+  | "REVOKE_SESSION"
+  | "FORCE_LOGOUT";
 
 /**
  * Conta com algum poder administrativo.
@@ -53,7 +55,8 @@ export interface PolicyResult {
  *    (senha atual, código do app) — e some do lugar onde o usuário esperaria ver isso.
  *
  * Nome e desbloqueio ficam liberados sobre si: um é cosmético, o outro devolve acesso sem
- * conceder poder nenhum.
+ * conceder poder nenhum. Encerrar sessão também: derrubar o próprio acesso não escala
+ * privilégio nenhum, e é o que alguém faz ao perceber que perdeu o notebook.
  */
 export function canPerform(action: AdminAction, context: ActorTarget): PolicyResult {
   const isSelf = context.actorId === context.targetId;

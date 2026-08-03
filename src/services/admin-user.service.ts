@@ -13,6 +13,7 @@
 
 import { userRepository } from "@/repositories/user.repository";
 import { auditService } from "@/services/audit.service";
+import { sessionService } from "@/services/session.service";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
 import { userSessionRepository } from "@/repositories/user-session.repository";
 import { hasAdminAccess } from "@/lib/permissions";
@@ -22,7 +23,14 @@ import { sendEmail, adminActionEmailTemplate } from "@/lib/email";
 import { logger } from "@/lib/logger";
 import { AUDIT_ACTIONS } from "@/constants/audit";
 import { canPerform, POLICY_MESSAGES, type AdminAction } from "@/utils/admin-policy";
-import type { AdminUserPage, AdminUserRow } from "@/types/audit";
+import { describeSession, parseUserAgent } from "@/utils/user-agent";
+import type {
+  AdminLoginRow,
+  AdminSessionRow,
+  AdminUserDetail,
+  AdminUserPage,
+  AdminUserRow,
+} from "@/types/audit";
 
 export class AdminActionError extends Error {
   constructor(
@@ -60,6 +68,44 @@ function hoursUntilRemoval(user: {
   const ttlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
   const elapsed = (Date.now() - user.createdAt.getTime()) / (60 * 60 * 1000);
   return Math.max(0, Math.ceil(ttlHours - elapsed));
+}
+
+/**
+ * Linha da conta como as telas administrativas a enxergam.
+ *
+ * Um lugar só para listagem e detalhe: campo novo aparece nos dois, e — mais importante —
+ * campo que não deve aparecer não entra por descuido em um deles.
+ */
+function toUserRow(
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    role: Role;
+    emailVerified: Date | null;
+    twoFactorEnabled: boolean;
+    lockedUntil: Date | null;
+    failedLoginAttempts: number;
+    createdAt: Date;
+  },
+  lastLoginAt: Date | null,
+  activeSessions: number,
+): AdminUserRow {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    emailVerified: user.emailVerified !== null,
+    twoFactorEnabled: user.twoFactorEnabled,
+    lockedUntil:
+      user.lockedUntil && user.lockedUntil > new Date() ? user.lockedUntil.toISOString() : null,
+    failedLoginAttempts: user.failedLoginAttempts,
+    lastLoginAt: lastLoginAt?.toISOString() ?? null,
+    expiresInHours: hoursUntilRemoval(user),
+    activeSessions,
+    createdAt: user.createdAt.toISOString(),
+  };
 }
 
 async function loadTarget(userId: string) {
@@ -112,22 +158,152 @@ export const adminUserService = {
       userSessionRepository.countActiveByUsers(ids),
     ]);
 
-    const users: AdminUserRow[] = rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      email: row.email,
-      role: row.role,
-      emailVerified: row.emailVerified !== null,
-      twoFactorEnabled: row.twoFactorEnabled,
-      lockedUntil: row.lockedUntil && row.lockedUntil > new Date() ? row.lockedUntil.toISOString() : null,
-      failedLoginAttempts: row.failedLoginAttempts,
-      lastLoginAt: lastLogins.get(row.id)?.toISOString() ?? null,
-      expiresInHours: hoursUntilRemoval(row),
-      activeSessions: activeSessions.get(row.id) ?? 0,
-      createdAt: row.createdAt.toISOString(),
-    }));
+    const users = rows.map((row) =>
+      toUserRow(row, lastLogins.get(row.id) ?? null, activeSessions.get(row.id) ?? 0),
+    );
 
     return { users, total, page, pageSize };
+  },
+
+  /**
+   * Tudo o que o painel mostra sobre uma conta: identidade, sessões, acessos e o que já foi
+   * feito sobre ela.
+   *
+   * As quatro consultas são independentes e vão em paralelo. Nenhuma toca em carteira.
+   */
+  async detail(userId: string): Promise<AdminUserDetail> {
+    const target = await loadTarget(userId);
+
+    const [sessions, logins, lastLogins, activeSessions, trail] = await Promise.all([
+      userSessionRepository.listByUser(userId),
+      loginAuditRepository.listByUser(userId, 20),
+      loginAuditRepository.lastSuccessByUsers([userId]),
+      userSessionRepository.countActiveByUsers([userId]),
+      // A trilha filtrada por conta cobre os dois lados: o que fizeram com ela e o que ela
+      // fez. Para uma conta comum o segundo conjunto é o histórico de login e senha.
+      auditService.list({ userId, pageSize: 25 }),
+    ]);
+
+    const now = new Date();
+
+    return {
+      user: toUserRow(target, lastLogins.get(userId) ?? null, activeSessions.get(userId) ?? 0),
+      sessions: sessions.map((session): AdminSessionRow => {
+        const { browser, os, location, ...rest } = session;
+
+        return {
+          id: rest.id,
+          type: rest.type,
+          device: describeSession({ browser, os, location }),
+          ipAddress: rest.ipAddress,
+          createdAt: rest.createdAt.toISOString(),
+          lastSeenAt: rest.lastSeenAt.toISOString(),
+          expiresAt: rest.expiresAt.toISOString(),
+          revokedAt: rest.revokedAt?.toISOString() ?? null,
+          revocationReason: rest.revocationReason,
+          active: rest.revokedAt === null && rest.expiresAt > now,
+        };
+      }),
+      logins: logins.map(
+        (login): AdminLoginRow => ({
+          id: login.id,
+          success: login.success,
+          ipAddress: login.ipAddress,
+          device: describeSession({ ...parseUserAgent(login.userAgent), location: null }),
+          reason: login.reason,
+          createdAt: login.createdAt.toISOString(),
+        }),
+      ),
+      events: trail.entries,
+    };
+  },
+
+  /**
+   * Encerra uma sessão específica.
+   *
+   * Passa pelo `sessionService` em vez de escrever direto: é ele que derruba a entrada de
+   * cache da validade. Revogar por fora deixaria a sessão viva até o cache expirar — e o
+   * sentido da ação é justamente cortar o acesso agora.
+   */
+  async revokeSession(ctx: ActionContext, userId: string, sessionId: string): Promise<void> {
+    const target = await authorize("REVOKE_SESSION", ctx, userId);
+
+    const session = await userSessionRepository.findById(sessionId);
+    if (!session || session.userId !== userId) {
+      throw new AdminActionError("NOT_FOUND", "Sessão não encontrada nesta conta.");
+    }
+    if (session.revokedAt !== null) {
+      throw new AdminActionError("ALREADY_APPLIED", "Esta sessão já estava encerrada.");
+    }
+
+    await sessionService.revoke({
+      sessionId,
+      userId,
+      userEmail: target.email,
+      revokedBy: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      reason: ctx.reason ?? "Encerrada pelo administrador",
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
+    });
+
+    await notifyUser(
+      target.email,
+      "Sessão encerrada",
+      "Um acesso à sua conta foi encerrado pela administração da plataforma. " +
+        "Se não reconhece o acesso, troque sua senha.",
+    );
+  },
+
+  /**
+   * Derruba todas as sessões da conta.
+   *
+   * Duas escritas, e as duas importam: revogar as linhas dá o registro de quem encerrou o
+   * quê e por quê; mover `sessionsValidFrom` é o que invalida **tokens** já emitidos, que
+   * são apátridas e continuariam valendo até expirar, trinta dias depois.
+   *
+   * Sobre a própria conta, a marca é recuada até o nascimento da sessão em uso — assim o
+   * administrador derruba todo o resto sem se expulsar no meio da operação.
+   */
+  async forceLogout(ctx: ActionContext, userId: string): Promise<number> {
+    const target = await authorize("FORCE_LOGOUT", ctx, userId);
+    const isSelf = ctx.adminId === userId;
+
+    const current = isSelf && ctx.sessionId ? await userSessionRepository.findById(ctx.sessionId) : null;
+    const validFrom = current?.createdAt ?? new Date();
+
+    const { count } = await userSessionRepository.revokeAllForUser(
+      userId,
+      ctx.adminId,
+      ctx.reason ?? "Sessões encerradas pelo administrador",
+      current?.id,
+    );
+
+    await userRepository.invalidateSessionsBefore(userId, validFrom);
+
+    await auditService.record({
+      action: AUDIT_ACTIONS.ADMIN_SESSIONS_REVOKED,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
+      entity: "User",
+      entityId: userId,
+      metadata: { sessionsRevoked: count, keptCurrent: Boolean(current) },
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
+    });
+
+    await notifyUser(
+      target.email,
+      "Acessos encerrados",
+      `${count} acesso(s) à sua conta foram encerrados pela administração da plataforma. ` +
+        "Você precisará entrar novamente. Se não reconhece a ação, troque sua senha.",
+    );
+
+    return count;
   },
 
   async rename(ctx: ActionContext, userId: string, name: string): Promise<void> {

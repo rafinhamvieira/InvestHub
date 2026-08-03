@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -252,8 +253,19 @@ export function UsersView({
               {data.users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
-                    <span className="font-medium">{user.name ?? "—"}</span>
+                    {/* O nome leva ao detalhe: sessões, acessos e histórico da conta. */}
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      {user.name ?? "—"}
+                    </Link>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
+                    {user.activeSessions > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {user.activeSessions} sessão(ões) ativa(s)
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell className="space-x-1">
                     {hasAdminAccess(user) && <Badge variant="warning">{user.role.toLowerCase()}</Badge>}

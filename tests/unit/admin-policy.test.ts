@@ -10,6 +10,8 @@ const TODAS: AdminAction[] = [
   "SEND_PASSWORD_RESET",
   "RESET_TWO_FACTOR",
   "UNLOCK",
+  "REVOKE_SESSION",
+  "FORCE_LOGOUT",
 ];
 
 describe("quem pode agir sobre quem", () => {
@@ -25,6 +27,15 @@ describe("quem pode agir sobre quem", () => {
       expect(result.allowed).toBe(false);
       expect(result.reason).toBe("ADMIN_TARGET");
     }
+  });
+
+  it("permite encerrar as próprias sessões", () => {
+    // Derrubar o próprio acesso não escala privilégio nenhum, e é o que alguém faz ao
+    // perceber que perdeu o notebook.
+    const proprio = { actorId: "admin1", targetId: "admin1", targetRole: "ADMIN" as const };
+
+    expect(canPerform("REVOKE_SESSION", proprio).allowed).toBe(true);
+    expect(canPerform("FORCE_LOGOUT", proprio).allowed).toBe(true);
   });
 
   it("impede o admin de trocar o próprio e-mail ou zerar o próprio 2FA pelo painel", () => {

@@ -111,3 +111,43 @@ export interface AdminUserPage {
   page: number;
   pageSize: number;
 }
+
+/** Sessão como a tela administrativa a mostra — sem fingerprint nem user-agent cru. */
+export interface AdminSessionRow {
+  id: string;
+  type: SessionType;
+  /** "Chrome · Windows 10/11 · Porto Alegre", já pronto para a tela. */
+  device: string;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revocationReason: string | null;
+  /** Viva: não revogada e ainda dentro da validade. */
+  active: boolean;
+}
+
+export interface AdminLoginRow {
+  id: string;
+  success: boolean;
+  ipAddress: string | null;
+  device: string;
+  /** Por que falhou, quando falhou. */
+  reason: string | null;
+  createdAt: string;
+}
+
+/**
+ * Tudo o que o painel mostra sobre **uma** conta.
+ *
+ * Identidade, acesso e segurança. Nenhum campo de carteira, patrimônio ou transação — a
+ * fronteira do painel vale aqui como vale na listagem.
+ */
+export interface AdminUserDetail {
+  user: AdminUserRow;
+  sessions: AdminSessionRow[];
+  logins: AdminLoginRow[];
+  /** Eventos da trilha que citam esta conta, como alvo ou como autora. */
+  events: AuditEntry[];
+}

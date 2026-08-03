@@ -143,4 +143,4 @@ Título não tem cotação: ganha **valor unitário sintético** (1,00 na emiss�
 
 Fases de produto (dashboard, carteira, aporte, alocação, screeners, valuation, ativo, watchlist, importação, proventos, renda fixa) — **entregues**.
 
-Painel administrativo profissional, em 10 etapas, uma por vez com confirmação: **1. Auditoria (entregue)** · **2. Dashboard administrativo (entregue)** · 3. Gestão de usuários · 4. Backup completo com restauração · 5. Logs da aplicação · 6. Telas de RBAC · 7. Monitoramento · 8. Configurações da plataforma · 9. Central de segurança (inclui checkpoints de auditoria em armazenamento externo WORM) · 10. Auditoria administrativa.
+Painel administrativo profissional, em 10 etapas, uma por vez com confirmação: **1. Auditoria (entregue)** · **2. Dashboard administrativo (entregue)** · **3. Gestão de usuários (entregue)** · 4. Backup completo com restauração · 5. Logs da aplicação · 6. Telas de RBAC · 7. Monitoramento · 8. Configurações da plataforma · 9. Central de segurança (inclui checkpoints de auditoria em armazenamento externo WORM) · 10. Auditoria administrativa.
