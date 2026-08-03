@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requirePermission, AuthorizationError } from "@/lib/auth-guard";
-import { Permission } from "@/lib/permissions";
+import { can, Permission } from "@/lib/permissions";
+import { ADMIN_NAV } from "@/config/admin-nav";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
@@ -22,9 +23,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     redirect(error instanceof AuthorizationError && error.code === "UNAUTHORIZED" ? "/login" : "/dashboard");
   }
 
+  // O menu mostra só o que o cargo abre. Não é a defesa — cada página confere a própria
+  // permissão —, é a diferença entre um painel coerente e um cheio de portas que batem.
+  const allowed = ADMIN_NAV.filter((item) => can(admin, item.permission)).map((item) => item.href);
+
   return (
     <div className="flex min-h-screen">
-      <AdminSidebar />
+      <AdminSidebar allowed={allowed} />
       <div className="flex flex-1 flex-col">
         <Topbar user={{ name: admin.name, email: admin.email, image: null }} />
         <main className="flex-1 overflow-y-auto bg-muted/30 p-6">{children}</main>

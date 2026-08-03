@@ -17,7 +17,13 @@ export enum Permission {
   VERIFY_AUDIT_INTEGRITY = "VERIFY_AUDIT_INTEGRITY",
   /** Listar contas e agir sobre elas (nome, e-mail, senha, 2FA, bloqueio, sessões). */
   MANAGE_USERS = "MANAGE_USERS",
-  /** Listar, gerar e baixar backups. */
+  /**
+   * Listar, gerar e baixar backups.
+   *
+   * **Dá acesso a todo dado financeiro da plataforma.** O dump é o banco inteiro; quem o
+   * baixa escolhe a senha da cifra e portanto consegue abri-lo. Ver
+   * `FINANCIAL_EXPOSURE_PERMISSIONS`.
+   */
   MANAGE_BACKUPS = "MANAGE_BACKUPS",
   /** Restaurar backup sobre o banco em uso. */
   RESTORE_BACKUP = "RESTORE_BACKUP",
@@ -53,10 +59,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 
   SUPPORT: [Permission.VIEW_AUDIT, Permission.MANAGE_USERS, Permission.VIEW_SYSTEM_HEALTH],
 
+  // Sem `MANAGE_BACKUPS`: o dump é o banco inteiro, e quem o baixa escolhe a senha da cifra
+  // — ou seja, consegue abri-lo e ler a carteira de todo mundo. Administrar a plataforma não
+  // pode implicar em ler o patrimônio de quem a usa.
   ADMIN: [
     Permission.VIEW_AUDIT,
     Permission.MANAGE_USERS,
-    Permission.MANAGE_BACKUPS,
     Permission.VIEW_SYSTEM_HEALTH,
     Permission.VIEW_BUSINESS_METRICS,
     Permission.MANAGE_PLATFORM,
@@ -65,6 +73,24 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 
   SUPER_ADMIN: Object.values(Permission),
 };
+
+/**
+ * Permissões que dão acesso — direto ou indireto — a dado financeiro de usuário.
+ *
+ * A promessa da plataforma é que ninguém enxerga a carteira alheia. As telas cumprem isso
+ * por construção: nenhum serviço administrativo alcança posição, transação ou provento. O
+ * backup é a exceção inevitável, porque backup que exclui dado não é backup — e o dump
+ * carrega tudo.
+ *
+ * Por isso estas permissões ficam concentradas no `SUPER_ADMIN`, que é quem já opera o
+ * servidor e teria acesso ao banco de qualquer forma. Conceder a mais alguém é ampliar o
+ * conjunto de pessoas capazes de ler a carteira de todos — decisão que não deve acontecer
+ * por descuido, e é o que o teste sobre esta lista impede.
+ */
+export const FINANCIAL_EXPOSURE_PERMISSIONS: Permission[] = [
+  Permission.MANAGE_BACKUPS,
+  Permission.RESTORE_BACKUP,
+];
 
 export interface Principal {
   id: string;

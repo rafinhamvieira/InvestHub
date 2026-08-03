@@ -1,11 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import { LayoutDashboard, ScrollText, Users, DatabaseBackup } from "lucide-react";
+import { Permission } from "@/lib/permissions";
 
 export interface AdminNavItem {
   title: string;
   href: string;
   icon: LucideIcon;
   description: string;
+  /** Sem ela, o item não aparece. Cada página confere a mesma permissão do seu lado. */
+  permission: Permission;
 }
 
 /**
@@ -20,23 +23,27 @@ export const ADMIN_NAV: AdminNavItem[] = [
     href: "/admin/dashboard",
     icon: LayoutDashboard,
     description: "Números da plataforma e saúde dos serviços",
+    permission: Permission.VIEW_SYSTEM_HEALTH,
   },
   {
     title: "Auditoria",
     href: "/admin/audit",
     icon: ScrollText,
     description: "Acessos, senhas e ações sensíveis de toda a plataforma",
+    permission: Permission.VIEW_AUDIT,
   },
   {
     title: "Usuários",
     href: "/admin/users",
     icon: Users,
     description: "Cadastro, permissões e ações administrativas",
+    permission: Permission.MANAGE_USERS,
   },
   {
     title: "Backup",
     href: "/admin/backup",
     icon: DatabaseBackup,
     description: "Cópias do banco de dados",
+    permission: Permission.MANAGE_BACKUPS,
   },
 ];

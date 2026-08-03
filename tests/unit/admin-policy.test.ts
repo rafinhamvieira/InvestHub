@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canPerform, POLICY_MESSAGES, type AdminAction } from "@/utils/admin-policy";
@@ -106,18 +106,39 @@ describe("fronteira de privacidade do painel", () => {
     "contribution.service",
   ];
 
+  /**
+   * A superfície é varrida, não listada.
+   *
+   * A versão anterior enumerava arquivos à mão, e uma rota administrativa nova só entrava na
+   * vigilância se alguém lembrasse de acrescentá-la aqui — exatamente o descuido que a regra
+   * existe para cobrir. Agora toda a área `/admin`, toda rota `/api/admin` e todo serviço
+   * `admin-*` entram sozinhos.
+   */
+  function arquivosDe(dir: string): string[] {
+    return readdirSync(join(process.cwd(), dir)).flatMap((entrada) => {
+      const relativo = `${dir}/${entrada}`;
+      if (statSync(join(process.cwd(), relativo)).isDirectory()) return arquivosDe(relativo);
+      return /\.(ts|tsx)$/.test(entrada) ? [relativo] : [];
+    });
+  }
+
   const ARQUIVOS = [
-    "src/services/admin-user.service.ts",
+    ...arquivosDe("src/app/api/admin"),
+    ...arquivosDe("src/app/(admin)"),
+    ...arquivosDe("src/services").filter((f) => f.includes("/admin-")),
     "src/services/audit.service.ts",
+    "src/services/audit-integrity.service.ts",
     "src/services/session.service.ts",
     "src/lib/auth-guard.ts",
-    "src/app/api/admin/users/route.ts",
-    "src/app/api/admin/audit/route.ts",
-    "src/app/api/admin/audit/export/route.ts",
-    "src/services/admin-health.service.ts",
-    "src/services/admin-metrics.service.ts",
-    "src/app/api/admin/dashboard/route.ts",
+    "src/components/admin/admin-sidebar.tsx",
   ];
+
+  it("a varredura encontra a superfície administrativa inteira", () => {
+    // Se o caminho mudar de lugar, a lista esvazia e todos os casos abaixo passariam à toa.
+    expect(ARQUIVOS.length).toBeGreaterThanOrEqual(15);
+    expect(ARQUIVOS).toContain("src/app/api/admin/backup/route.ts");
+    expect(ARQUIVOS).toContain("src/services/admin-metrics.service.ts");
+  });
 
   /** Só as linhas de import interessam — comentário citando o módulo proibido é permitido. */
   function importsOf(arquivo: string): string[] {

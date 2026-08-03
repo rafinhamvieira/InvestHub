@@ -1,7 +1,15 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Permission, ROLE_PERMISSIONS, adminRoles, can, hasAdminAccess } from "@/lib/permissions";
+import {
+  FINANCIAL_EXPOSURE_PERMISSIONS,
+  Permission,
+  ROLE_PERMISSIONS,
+  adminRoles,
+  can,
+  hasAdminAccess,
+} from "@/lib/permissions";
+import { ADMIN_NAV } from "@/config/admin-nav";
 import type { Role } from "@prisma/client";
 
 const ROLES: Role[] = ["USER", "READ_ONLY", "AUDITOR", "SUPPORT", "ADMIN", "SUPER_ADMIN"];
@@ -77,6 +85,57 @@ describe("mapa de permissões", () => {
   it("nega quando não há principal", () => {
     expect(can(null, Permission.VIEW_AUDIT)).toBe(false);
     expect(can(undefined, Permission.VIEW_AUDIT)).toBe(false);
+  });
+});
+
+describe("acesso a dado financeiro", () => {
+  /**
+   * A promessa ao usuário é que ninguém enxerga a carteira alheia. As telas cumprem isso por
+   * construção — nenhum serviço administrativo alcança posição, transação ou provento. O
+   * backup é a exceção inevitável: backup que exclui dado não é backup, e o dump carrega
+   * tudo de todos.
+   *
+   * Daí a regra: quem pode baixar ou restaurar o dump é só o `SUPER_ADMIN`, que já opera o
+   * servidor e teria o banco de qualquer jeito. Este teste existe para que ampliar esse
+   * conjunto seja uma decisão explícita, nunca um efeito colateral de mexer no mapa.
+   */
+  it("só o super administrador alcança dado financeiro de usuário", () => {
+    for (const permission of FINANCIAL_EXPOSURE_PERMISSIONS) {
+      expect(can({ id: "x", role: "SUPER_ADMIN" }, permission)).toBe(true);
+
+      for (const role of ROLES.filter((r) => r !== "SUPER_ADMIN")) {
+        expect(can({ id: "x", role }, permission)).toBe(false);
+      }
+    }
+  });
+
+  it("administrador comum administra a plataforma sem ler a carteira de ninguém", () => {
+    const admin = { id: "a1", role: "ADMIN" as const };
+
+    expect(can(admin, Permission.MANAGE_USERS)).toBe(true);
+    expect(can(admin, Permission.MANAGE_PLATFORM)).toBe(true);
+    expect(can(admin, Permission.MANAGE_BACKUPS)).toBe(false);
+    expect(can(admin, Permission.RESTORE_BACKUP)).toBe(false);
+  });
+});
+
+describe("menu administrativo", () => {
+  it("todo item exige uma permissão", () => {
+    // Item sem permissão apareceria para qualquer cargo administrativo.
+    for (const item of ADMIN_NAV) {
+      expect(Object.values(Permission)).toContain(item.permission);
+    }
+  });
+
+  it("cargo sem a permissão não recebe o item no menu", () => {
+    const visíveis = (role: (typeof ROLES)[number]) =>
+      ADMIN_NAV.filter((item) => can({ id: "x", role }, item.permission)).map((item) => item.href);
+
+    expect(visíveis("AUDITOR")).not.toContain("/admin/backup");
+    expect(visíveis("SUPPORT")).not.toContain("/admin/backup");
+    expect(visíveis("ADMIN")).not.toContain("/admin/backup");
+    expect(visíveis("SUPER_ADMIN")).toContain("/admin/backup");
+    expect(visíveis("USER")).toEqual([]);
   });
 });
 

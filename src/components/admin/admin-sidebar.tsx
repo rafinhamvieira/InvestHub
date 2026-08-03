@@ -11,9 +11,14 @@ import { ADMIN_NAV } from "@/config/admin-nav";
  *
  * Visualmente distinta da área de investimentos de propósito: quem está aqui precisa saber
  * que está operando sobre contas de outras pessoas, não sobre a própria carteira.
+ *
+ * Recebe os endereços permitidos já resolvidos pelo layout, que roda no servidor e conhece o
+ * cargo. Passar apenas texto mantém o mapa de permissões fora do pacote do navegador — e a
+ * decisão continua sendo do servidor, que é quem também guarda cada página.
  */
-export function AdminSidebar() {
+export function AdminSidebar({ allowed }: { allowed: string[] }) {
   const pathname = usePathname();
+  const items = ADMIN_NAV.filter((item) => allowed.includes(item.href));
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r bg-card lg:flex">
@@ -23,7 +28,7 @@ export function AdminSidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6">
-        {ADMIN_NAV.map((item) => {
+        {items.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
