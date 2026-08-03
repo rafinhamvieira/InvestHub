@@ -34,6 +34,8 @@ export interface AdminContext extends Principal {
   email: string;
   name: string | null;
   sessionId: string | null;
+  /** A tela de confirmação usa para saber se deve pedir o código do app. */
+  twoFactorEnabled: boolean;
 }
 
 /** Janela em que a confirmação de senha continua valendo para ações críticas. */
@@ -56,7 +58,14 @@ export async function requirePermission(permission: Permission): Promise<AdminCo
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true, role: true, sessionsValidFrom: true },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      sessionsValidFrom: true,
+      twoFactorEnabled: true,
+    },
   });
 
   if (!user) throw new AuthorizationError("UNAUTHORIZED");
@@ -90,6 +99,7 @@ export async function requirePermission(permission: Permission): Promise<AdminCo
     name: user.name,
     role: user.role,
     sessionId,
+    twoFactorEnabled: user.twoFactorEnabled,
   };
 }
 

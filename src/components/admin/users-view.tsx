@@ -21,7 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
+import { StepUpDialog } from "@/components/admin/step-up-dialog";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +54,24 @@ interface PendingAction {
   user: AdminUserRow;
   action: Action;
 }
+
+/**
+ * Ações que a API recusa sem justificativa escrita.
+ *
+ * Espelha o schema da rota — lá a exigência é validada, aqui ela é pedida. Renomear fica de
+ * fora: é a única alteração cosmética da lista, e exigir motivo para tudo transforma a
+ * justificativa em formalidade preenchida com "ok".
+ */
+const REQUIRES_REASON = new Set<Action>([
+  "CHANGE_EMAIL",
+  "SEND_PASSWORD_RESET",
+  "RESET_TWO_FACTOR",
+  "UNLOCK",
+  "GRANT_ADMIN",
+  "REVOKE_ADMIN",
+]);
+
+const REASON_MIN_LENGTH = 10;
 
 const ACTION_COPY: Record<Action, { title: string; description: string; confirm: string }> = {
   RENAME: {
@@ -85,7 +105,7 @@ const ACTION_COPY: Record<Action, { title: string; description: string; confirm:
   GRANT_ADMIN: {
     title: "Conceder permissão de administrador",
     description:
-      "O usuário passa a ver a auditoria de toda a plataforma, a lista de usuários e o backup do banco. Continua sem acesso à carteira de ninguém. Vale a partir do próximo login dele.",
+      "O usuário passa a ver a auditoria de toda a plataforma e a lista de usuários, e a agir sobre contas. Não alcança backup nem qualquer dado de carteira. Vale a partir do próximo login dele.",
     confirm: "Conceder acesso",
   },
   REVOKE_ADMIN: {
@@ -98,9 +118,12 @@ const ACTION_COPY: Record<Action, { title: string; description: string; confirm:
 export function UsersView({
   initial,
   currentAdminId,
+  adminTwoFactorEnabled,
 }: {
   initial: AdminUserPage;
   currentAdminId: string;
+  /** Do próprio administrador: decide se a confirmação pede o código do app. */
+  adminTwoFactorEnabled: boolean;
 }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
@@ -108,7 +131,9 @@ export function UsersView({
   const [isLoading, setIsLoading] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [inputValue, setInputValue] = useState("");
+  const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [needsStepUp, setNeedsStepUp] = useState(false);
 
   async function load(page = 1) {
     setIsLoading(true);
@@ -128,8 +153,20 @@ export function UsersView({
   function openAction(user: AdminUserRow, action: Action) {
     setPending({ user, action });
     setInputValue(action === "RENAME" ? (user.name ?? "") : "");
+    setReason("");
   }
 
+  function closeAction() {
+    setPending(null);
+    setReason("");
+    setInputValue("");
+  }
+
+  /**
+   * Envia a ação. O 428 não é erro para o usuário: é o servidor dizendo que a confirmação de
+   * identidade expirou. A tela abre o diálogo de senha e, aceita a confirmação, reenvia esta
+   * mesma ação — a justificativa digitada continua no estado, então nada é perdido.
+   */
   async function confirmAction() {
     if (!pending) return;
     setIsSubmitting(true);
@@ -137,6 +174,7 @@ export function UsersView({
     const body: Record<string, unknown> = { action: pending.action };
     if (pending.action === "RENAME") body.name = inputValue;
     if (pending.action === "CHANGE_EMAIL") body.email = inputValue;
+    if (REQUIRES_REASON.has(pending.action)) body.reason = reason.trim();
 
     const response = await fetch(`/api/admin/users/${pending.user.id}`, {
       method: "POST",
@@ -146,16 +184,26 @@ export function UsersView({
 
     setIsSubmitting(false);
 
+    if (response.status === 428) {
+      setNeedsStepUp(true);
+      return;
+    }
+
     if (!response.ok) {
       toast.error(await extractApiError(response, "Não foi possível concluir a ação."));
       return;
     }
 
     toast.success("Ação registrada. O usuário foi avisado por e-mail.");
-    setPending(null);
+    closeAction();
     await load(data.page);
     router.refresh();
   }
+
+  const justificativaOk =
+    pending === null ||
+    !REQUIRES_REASON.has(pending.action) ||
+    reason.trim().length >= REASON_MIN_LENGTH;
 
   const lastPage = Math.max(1, Math.ceil(data.total / data.pageSize));
 
@@ -289,7 +337,12 @@ export function UsersView({
         </div>
       </div>
 
-      <Dialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+      {/* Enquanto a senha é pedida, este diálogo sai da tela sem perder o que foi digitado:
+          `pending` continua de pé e a ação é reenviada assim que a confirmação for aceita. */}
+      <Dialog
+        open={pending !== null && !needsStepUp}
+        onOpenChange={(open) => !open && closeAction()}
+      >
         <DialogContent>
           {pending && (
             <>
@@ -314,11 +367,28 @@ export function UsersView({
                 </div>
               )}
 
+              {REQUIRES_REASON.has(pending.action) && (
+                <div className="space-y-2">
+                  <Label htmlFor="action-reason">Motivo</Label>
+                  <Textarea
+                    id="action-reason"
+                    rows={3}
+                    placeholder="Ex: chamado #412 — usuário perdeu o celular e os códigos de recuperação."
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Fica na trilha de auditoria junto com seu nome, IP e horário. Mínimo de{" "}
+                    {REASON_MIN_LENGTH} caracteres.
+                  </p>
+                </div>
+              )}
+
               <DialogFooter>
-                <Button variant="outline" onClick={() => setPending(null)}>
+                <Button variant="outline" onClick={closeAction}>
                   Cancelar
                 </Button>
-                <Button onClick={confirmAction} disabled={isSubmitting}>
+                <Button onClick={confirmAction} disabled={isSubmitting || !justificativaOk}>
                   {isSubmitting && <Loader2 className="animate-spin" />}
                   {ACTION_COPY[pending.action].confirm}
                 </Button>
@@ -327,6 +397,13 @@ export function UsersView({
           )}
         </DialogContent>
       </Dialog>
+
+      <StepUpDialog
+        open={needsStepUp}
+        onOpenChange={setNeedsStepUp}
+        twoFactorEnabled={adminTwoFactorEnabled}
+        onConfirmed={confirmAction}
+      />
     </div>
   );
 }

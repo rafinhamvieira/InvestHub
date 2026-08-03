@@ -18,5 +18,11 @@ export default async function AdminUsersPage() {
     adminUserService.list({ page: 1, pageSize: 50 }),
   ]);
 
-  return <UsersView initial={initial} currentAdminId={admin.id} />;
+  return (
+    <UsersView
+      initial={initial}
+      currentAdminId={admin.id}
+      adminTwoFactorEnabled={admin.twoFactorEnabled}
+    />
+  );
 }
