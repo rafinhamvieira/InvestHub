@@ -27,7 +27,18 @@ export default defineConfig({
      * A guarda que impede apontar para dado real está no `global-setup`, e é sobre o nome do
      * banco: ela roda antes desta substituição e não depende dela.
      */
-    env: { DATABASE_URL: process.env.TEST_DATABASE_URL ?? "" },
+    env: {
+      DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
+      /**
+       * Nenhum e-mail sai daqui.
+       *
+       * Os serviços administrativos avisam o usuário afetado a cada ação, e a suíte roda
+       * dentro do compose, com as credenciais reais no `env_file`. Sem esta linha, testar
+       * "encerrar sessões" manda e-mail de verdade, pela conta de produção, para endereços
+       * inventados — que voltam como falha de entrega e sujam a reputação do remetente.
+       */
+      EMAIL_PROVIDER: "disabled",
+    },
     // Um banco só, compartilhado: arquivos em paralelo embaralhariam os dados.
     fileParallelism: false,
     testTimeout: 30_000,

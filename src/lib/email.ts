@@ -4,15 +4,20 @@ import { logger } from "@/lib/logger";
 
 const FROM = process.env.EMAIL_FROM ?? "InvestHub <no-reply@investhub.local>";
 
-type EmailProvider = "smtp" | "resend" | "none";
+type EmailProvider = "smtp" | "resend" | "none" | "disabled";
 
 /**
  * Provedor de envio. Definido por EMAIL_PROVIDER; se ausente, é deduzido pelas
  * credenciais presentes — SMTP tem prioridade por não ter restrição de destinatário.
+ *
+ * `disabled` existe separado de `none` porque as duas situações são opostas: `none` é
+ * configuração faltando, e merece erro no log; `disabled` é decisão de quem rodou o
+ * processo. A suíte de integração usa a segunda — sem ela, exercitar uma ação que notifica
+ * o usuário dispara e-mail de verdade, pela conta real, para endereços que não existem.
  */
 function resolveProvider(): EmailProvider {
   const explicit = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
-  if (explicit === "smtp" || explicit === "resend") return explicit;
+  if (explicit === "smtp" || explicit === "resend" || explicit === "disabled") return explicit;
   if (process.env.SMTP_HOST) return "smtp";
   if (process.env.RESEND_API_KEY) return "resend";
   return "none";
@@ -51,6 +56,12 @@ interface SendEmailInput {
 
 export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<void> {
   const provider = resolveProvider();
+
+  if (provider === "disabled") {
+    // Desligado de propósito (EMAIL_PROVIDER=disabled). Sem log de erro: não há nada errado.
+    logger.debug("Envio de e-mail desligado", { to, subject });
+    return;
+  }
 
   if (provider === "none") {
     // Em produção isso é erro de configuração: o usuário vê "e-mail enviado" e nada chega.
