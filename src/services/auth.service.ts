@@ -1,6 +1,6 @@
 import { userRepository } from "@/repositories/user.repository";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { passwordResetRepository } from "@/repositories/password-reset.repository";
 import { verificationTokenRepository } from "@/repositories/verification-token.repository";
 import { hashPassword, verifyPassword, generateSecureToken } from "@/lib/crypto";
@@ -37,7 +37,7 @@ export const authService = {
     const existing = await userRepository.findByEmail(input.email);
     if (existing) {
       // Não revela que o e-mail já existe: comportamento idêntico ao de sucesso.
-      await auditLogRepository.record({
+      await auditService.record({
         action: AUDIT_ACTIONS.REGISTER_ATTEMPT_DUPLICATE,
         entity: "User",
         metadata: { email: input.email },
@@ -54,7 +54,7 @@ export const authService = {
       passwordHash,
     });
 
-    await auditLogRepository.record({
+    await auditService.record({
       userId: user.id,
       action: AUDIT_ACTIONS.USER_REGISTERED,
       entity: "User",
@@ -113,7 +113,7 @@ export const authService = {
     const user = (await userRepository.findByEmail(record.identifier))!;
     await userRepository.markEmailVerified(user.id);
     await verificationTokenRepository.deleteByToken(token);
-    await auditLogRepository.record({ userId: user.id, action: AUDIT_ACTIONS.EMAIL_VERIFIED });
+    await auditService.record({ userId: user.id, action: AUDIT_ACTIONS.EMAIL_VERIFIED });
   },
 
   async requestPasswordReset(email: string, ctx: RequestContext): Promise<void> {
@@ -142,7 +142,7 @@ export const authService = {
       html: passwordResetEmailTemplate(resetUrl),
     });
 
-    await auditLogRepository.record({
+    await auditService.record({
       userId: user.id,
       action: AUDIT_ACTIONS.PASSWORD_RESET_REQUESTED,
       ipAddress: ctx.ipAddress,
@@ -169,7 +169,7 @@ export const authService = {
     await passwordResetRepository.markUsed(record.id);
     await passwordResetRepository.invalidateAllForUser(record.userId);
 
-    await auditLogRepository.record({
+    await auditService.record({
       userId: record.userId,
       action: AUDIT_ACTIONS.PASSWORD_RESET_COMPLETED,
       ipAddress: ctx.ipAddress,
@@ -231,7 +231,7 @@ export const authService = {
       // O bloqueio é evento de segurança por si só: quem investiga precisa vê-lo na trilha
       // de ações, não apenas deduzi-lo contando tentativas na trilha de acessos.
       if (shouldLock) {
-        await auditLogRepository.record({
+        await auditService.record({
           userId: user.id,
           action: AUDIT_ACTIONS.ACCOUNT_LOCKED,
           metadata: { attempts, lockMinutes: AUTH_CONSTANTS.LOCK_DURATION_MINUTES },

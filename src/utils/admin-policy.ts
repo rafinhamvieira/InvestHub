@@ -1,3 +1,6 @@
+import type { Role } from "@prisma/client";
+import { ROLE_PERMISSIONS } from "@/lib/permissions";
+
 /**
  * Regras de quem pode agir sobre quem no painel administrativo — puro, sem I/O.
  *
@@ -15,13 +18,23 @@ export type AdminAction =
   | "GRANT_ADMIN"
   | "REVOKE_ADMIN";
 
+/**
+ * Conta com algum poder administrativo.
+ *
+ * Não compara papéis: pergunta ao mapa de permissões. Cargo novo com acesso ao painel
+ * passa a ser protegido por esta regra sem ninguém lembrar de vir aqui.
+ */
+function isPrivileged(role: Role): boolean {
+  return (ROLE_PERMISSIONS[role]?.length ?? 0) > 0;
+}
+
 /** Ações que mexem no papel, e não nos dados da conta. */
 const ROLE_ACTIONS: AdminAction[] = ["GRANT_ADMIN", "REVOKE_ADMIN"];
 
 export interface ActorTarget {
   actorId: string;
   targetId: string;
-  targetRole: "USER" | "ADMIN";
+  targetRole: Role;
 }
 
 export interface PolicyResult {
@@ -61,15 +74,15 @@ export function canPerform(action: AdminAction, context: ActorTarget): PolicyRes
   // Conta de outro administrador é intocável **nos dados** — trocar e-mail ou zerar 2FA de
   // um par seria tomar o painel de quem também administra. Rebaixar continua permitido: é
   // como se corrige uma permissão dada por engano.
-  if (!isSelf && context.targetRole === "ADMIN" && !isRoleAction) {
+  if (!isSelf && isPrivileged(context.targetRole) && !isRoleAction) {
     return { allowed: false, reason: "ADMIN_TARGET" };
   }
 
-  if (action === "GRANT_ADMIN" && context.targetRole === "ADMIN") {
+  if (action === "GRANT_ADMIN" && isPrivileged(context.targetRole)) {
     return { allowed: false, reason: "ALREADY_APPLIED" };
   }
 
-  if (action === "REVOKE_ADMIN" && context.targetRole !== "ADMIN") {
+  if (action === "REVOKE_ADMIN" && !isPrivileged(context.targetRole)) {
     return { allowed: false, reason: "ALREADY_APPLIED" };
   }
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAccessError } from "@/lib/admin-guard";
+import { requirePermission, authorizationStatus } from "@/lib/auth-guard";
+import { Permission } from "@/lib/permissions";
 import { adminBackupService, BackupError } from "@/services/admin-backup.service";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getClientIp, getUserAgent } from "@/utils/request";
 import { AUDIT_ACTIONS } from "@/constants/audit";
@@ -12,10 +13,9 @@ export const maxDuration = 300;
 
 async function guard() {
   try {
-    return await requireAdmin();
+    return await requirePermission(Permission.MANAGE_BACKUPS);
   } catch (error) {
-    const status = error instanceof AdminAccessError && error.code === "UNAUTHORIZED" ? 401 : 403;
-    return NextResponse.json({ error: "FORBIDDEN" }, { status });
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: authorizationStatus(error) });
   }
 }
 
@@ -54,7 +54,7 @@ export async function POST() {
     const file = await adminBackupService.create();
 
     const [ipAddress, userAgent] = await Promise.all([getClientIp(), getUserAgent()]);
-    await auditLogRepository.record({
+    await auditService.record({
       userId: admin.id,
       action: AUDIT_ACTIONS.ADMIN_BACKUP_CREATED,
       entity: "Backup",

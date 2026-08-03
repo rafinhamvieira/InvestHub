@@ -141,3 +141,41 @@ docker compose exec -T redis redis-cli FLUSHALL
 - **Cotas dos provedores:** `FUNDAMENTALS_PER_CYCLE` acima de 4 estoura as 200 chamadas
   diárias do plano gratuito do Bolsai. `DIVIDENDS_PER_CYCLE` usa fonte gratuita, o limite
   é bom senso.
+
+---
+
+## Variáveis obrigatórias depois da Etapa 1 do painel
+
+```bash
+grep -c '^AUDIT_HMAC_KEY=' .env
+```
+
+Se não existir, gere — sem ela a cadeia de auditoria funciona, mas os checkpoints
+(as âncoras que impedem reescrita da história) não são gravados:
+
+```bash
+echo "AUDIT_HMAC_KEY=$(openssl rand -hex 32)" >> .env
+```
+
+## Depois de mexer em cargos ou permissões
+
+O cargo viaja no token da sessão, que dura 30 dias. Quem foi promovido ou rebaixado
+**precisa sair e entrar de novo** para o menu e o middleware refletirem a mudança — as
+rotas já barram na hora, porque conferem o cargo no banco.
+
+## Migrações de enum
+
+Valor novo em enum do Postgres não pode ser usado na mesma transação que o cria. Se
+precisar promover alguém a um cargo recém-criado, use **duas migrations**: uma que só faz
+`ALTER TYPE ... ADD VALUE`, outra que o utiliza. Foi assim com `SUPER_ADMIN`.
+
+## Conferir a integridade da trilha
+
+Pelo painel, em Auditoria → Verificar agora (só SUPER_ADMIN). Ou direto:
+
+```bash
+docker compose exec -T postgres psql -U investhub -d investhub -c "SELECT count(*) registros, min(seq) menor, max(seq) maior FROM audit_logs;"
+```
+
+Buraco entre `menor` e `maior` com contagem menor que a diferença é evidência de remoção —
+a trilha recusa DELETE, então isso não deveria acontecer nunca.

@@ -108,9 +108,12 @@ describe("fronteira de privacidade do painel", () => {
 
   const ARQUIVOS = [
     "src/services/admin-user.service.ts",
-    "src/services/admin-audit.service.ts",
+    "src/services/audit.service.ts",
+    "src/services/session.service.ts",
+    "src/lib/auth-guard.ts",
     "src/app/api/admin/users/route.ts",
     "src/app/api/admin/audit/route.ts",
+    "src/app/api/admin/audit/export/route.ts",
   ];
 
   /** Só as linhas de import interessam — comentário citando o módulo proibido é permitido. */

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { extractApiError } from "@/utils/api-error";
 import type { AdminUserPage, AdminUserRow } from "@/types/audit";
+import { hasAdminAccess } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -207,7 +208,7 @@ export function UsersView({
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </TableCell>
                   <TableCell className="space-x-1">
-                    {user.role === "ADMIN" && <Badge variant="warning">admin</Badge>}
+                    {hasAdminAccess(user) && <Badge variant="warning">{user.role.toLowerCase()}</Badge>}
                     {!user.emailVerified && (
                       <Badge variant="secondary">
                         {user.expiresInHours === null
@@ -240,7 +241,7 @@ export function UsersView({
                     <Button variant="ghost" size="sm" title="Desbloquear conta" disabled={!user.lockedUntil} onClick={() => openAction(user, "UNLOCK")}>
                       <LockOpen className="size-4" />
                     </Button>
-                    {user.role === "ADMIN" ? (
+                    {hasAdminAccess(user) ? (
                       <Button
                         variant="ghost"
                         size="sm"

@@ -12,8 +12,11 @@
  */
 
 import { userRepository } from "@/repositories/user.repository";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
+import { userSessionRepository } from "@/repositories/user-session.repository";
+import { hasAdminAccess } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 import { authService } from "@/services/auth.service";
 import { sendEmail, adminActionEmailTemplate } from "@/lib/email";
 import { logger } from "@/lib/logger";
@@ -33,6 +36,10 @@ export class AdminActionError extends Error {
 
 interface ActionContext {
   adminId: string;
+  adminEmail: string;
+  sessionId?: string | null;
+  /** Justificativa; obrigatória nas ações críticas, validada no schema da rota. */
+  reason?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -45,10 +52,10 @@ const MAX_PAGE_SIZE = 100;
  */
 function hoursUntilRemoval(user: {
   emailVerified: Date | null;
-  role: string;
+  role: Role;
   createdAt: Date;
 }): number | null {
-  if (user.emailVerified !== null || user.role === "ADMIN") return null;
+  if (user.emailVerified !== null || hasAdminAccess({ id: "", role: user.role })) return null;
 
   const ttlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
   const elapsed = (Date.now() - user.createdAt.getTime()) / (60 * 60 * 1000);
@@ -98,7 +105,12 @@ export const adminUserService = {
     const page = Math.max(options.page, 1);
 
     const { rows, total } = await userRepository.listForAdmin({ ...options, page, pageSize });
-    const lastLogins = await loginAuditRepository.lastSuccessByUsers(rows.map((row) => row.id));
+    // Duas consultas em lote para a página inteira — nunca uma por linha.
+    const ids = rows.map((row) => row.id);
+    const [lastLogins, activeSessions] = await Promise.all([
+      loginAuditRepository.lastSuccessByUsers(ids),
+      userSessionRepository.countActiveByUsers(ids),
+    ]);
 
     const users: AdminUserRow[] = rows.map((row) => ({
       id: row.id,
@@ -111,6 +123,7 @@ export const adminUserService = {
       failedLoginAttempts: row.failedLoginAttempts,
       lastLoginAt: lastLogins.get(row.id)?.toISOString() ?? null,
       expiresInHours: hoursUntilRemoval(row),
+      activeSessions: activeSessions.get(row.id) ?? 0,
       createdAt: row.createdAt.toISOString(),
     }));
 
@@ -122,9 +135,14 @@ export const adminUserService = {
     const previous = target.name;
 
     await userRepository.update(userId, { name });
-    await auditLogRepository.record({
-      userId: ctx.adminId,
+    await auditService.record({
       action: AUDIT_ACTIONS.ADMIN_USER_RENAMED,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       metadata: { from: previous, to: name },
@@ -158,9 +176,14 @@ export const adminUserService = {
     }
 
     await userRepository.updateEmail(userId, normalized);
-    await auditLogRepository.record({
-      userId: ctx.adminId,
+    await auditService.record({
       action: AUDIT_ACTIONS.ADMIN_USER_EMAIL_CHANGED,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       metadata: { from: target.email, to: normalized },
@@ -194,9 +217,14 @@ export const adminUserService = {
       userAgent: ctx.userAgent,
     });
 
-    await auditLogRepository.record({
-      userId: ctx.adminId,
+    await auditService.record({
       action: AUDIT_ACTIONS.ADMIN_PASSWORD_RESET_SENT,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       ipAddress: ctx.ipAddress,
@@ -218,9 +246,14 @@ export const adminUserService = {
     }
 
     await userRepository.disableTwoFactor(userId);
-    await auditLogRepository.record({
-      userId: ctx.adminId,
+    await auditService.record({
       action: AUDIT_ACTIONS.TWO_FACTOR_RESET_BY_ADMIN,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       ipAddress: ctx.ipAddress,
@@ -238,18 +271,26 @@ export const adminUserService = {
   /**
    * Concede ou remove permissão de administrador.
    *
-   * Vale só no próximo login de quem foi alterado: o papel viaja no token da sessão. Quem
+   * Vale só no próximo login de quem foi alterado: o cargo viaja no token da sessão. Quem
    * acabou de ser rebaixado ainda passa pelo middleware até o token expirar — mas esbarra
-   * no `requireAdmin()`, que confere o papel no banco a cada requisição.
+   * no guard de cada rota, que confere o cargo no banco a cada requisição.
    */
-  async setRole(ctx: ActionContext, userId: string, role: "USER" | "ADMIN"): Promise<void> {
-    const action = role === "ADMIN" ? "GRANT_ADMIN" : "REVOKE_ADMIN";
+  async setRole(ctx: ActionContext, userId: string, role: Role): Promise<void> {
+    // "Conceder" é definido pelo mapa de permissões: cargo novo com acesso ao painel entra
+    // nesta conta automaticamente.
+    const granting = hasAdminAccess({ id: userId, role });
+    const action = granting ? "GRANT_ADMIN" : "REVOKE_ADMIN";
     const target = await authorize(action, ctx, userId);
 
     await userRepository.setRole(userId, role);
-    await auditLogRepository.record({
-      userId: ctx.adminId,
-      action: role === "ADMIN" ? AUDIT_ACTIONS.ADMIN_ROLE_GRANTED : AUDIT_ACTIONS.ADMIN_ROLE_REVOKED,
+    await auditService.record({
+      action: granting ? AUDIT_ACTIONS.ADMIN_ROLE_GRANTED : AUDIT_ACTIONS.ADMIN_ROLE_REVOKED,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       metadata: { from: target.role, to: role },
@@ -259,8 +300,8 @@ export const adminUserService = {
 
     await notifyUser(
       target.email,
-      role === "ADMIN" ? "Permissão de administrador concedida" : "Permissão de administrador removida",
-      role === "ADMIN"
+      granting ? "Permissão de administrador concedida" : "Permissão de administrador removida",
+      granting
         ? "Sua conta agora tem acesso ao painel de administração. O acesso vale a partir do próximo login."
         : "Sua conta não tem mais acesso ao painel de administração.",
     );
@@ -270,9 +311,14 @@ export const adminUserService = {
     const target = await authorize("UNLOCK", ctx, userId);
 
     await userRepository.unlock(userId);
-    await auditLogRepository.record({
-      userId: ctx.adminId,
+    await auditService.record({
       action: AUDIT_ACTIONS.ADMIN_ACCOUNT_UNLOCKED,
+      actorId: ctx.adminId,
+      actorEmail: ctx.adminEmail,
+      userId,
+      targetEmail: target.email,
+      sessionId: ctx.sessionId,
+      reason: ctx.reason,
       entity: "User",
       entityId: userId,
       ipAddress: ctx.ipAddress,

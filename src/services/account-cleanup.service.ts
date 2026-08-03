@@ -15,8 +15,10 @@
 
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { AUDIT_ACTIONS } from "@/constants/audit";
+import { hasAdminAccess } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 
 /** Prazo para confirmar o e-mail. */
 const UNVERIFIED_TTL_HOURS = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? 24);
@@ -28,7 +30,7 @@ export function isExpiredUnverified(
   ttlHours = UNVERIFIED_TTL_HOURS,
 ): boolean {
   if (user.emailVerified !== null) return false;
-  if (user.role === "ADMIN") return false;
+  if (hasAdminAccess({ id: "", role: user.role as Role })) return false;
 
   const ageHours = (reference.getTime() - user.createdAt.getTime()) / (60 * 60 * 1000);
   return ageHours >= ttlHours;
@@ -42,7 +44,7 @@ export const accountCleanupService = {
     const candidates = await prisma.user.findMany({
       where: {
         emailVerified: null,
-        role: "USER",
+        role: { in: ["USER"] },
         createdAt: { lt: cutoff },
       },
       select: {
@@ -65,7 +67,7 @@ export const accountCleanupService = {
 
       // A auditoria vem antes: com `onDelete: SetNull` no `userId`, o registro sobrevive à
       // conta, e o e-mail no metadata é o que permite saber depois quem foi removido.
-      await auditLogRepository.record({
+      await auditService.record({
         userId: candidate.id,
         action: AUDIT_ACTIONS.ACCOUNT_REMOVED_UNVERIFIED,
         entity: "User",

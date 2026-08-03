@@ -2,7 +2,7 @@
 
 Plataforma premium de gestão e análise de investimentos na B3 — carteira, dividendos, valuation e recomendações inteligentes. Ver [ARCHITECTURE.md](ARCHITECTURE.md) para detalhes de arquitetura, camadas e modelo de dados.
 
-> **Status**: Fase 1 (fundação) — arquitetura, banco de dados, autenticação e layout base. Funcionalidades de produto (dashboard, carteira, screener, valuation, IA) serão entregues incrementalmente.
+> **Status**: em produção. Produto completo (dashboard, carteira, aporte, alocação, proventos, renda fixa, screeners, valuation, watchlist, importação/exportação). Painel administrativo em construção por etapas — Etapa 1 (auditoria imutável, RBAC e sessões) entregue.
 
 ## Stack
 

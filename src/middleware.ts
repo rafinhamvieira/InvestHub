@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
+import { hasAdminAccess } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 
 // Instância edge-safe: só valida o JWT da sessão, sem tocar em Prisma/Redis.
 const { auth } = NextAuth(authConfig);
@@ -40,9 +42,11 @@ export default auth((req) => {
   // rota chama `requireAdmin()`, que confere o papel no banco. Esta camada existe para
   // evitar que a tela sequer carregue, e para o 403 sair antes de tocar o banco.
   if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
-    const role = (req.auth?.user as { role?: string } | undefined)?.role;
+    // Triagem pelo token: o cargo aqui pode estar desatualizado, então o guard de cada rota
+    // confere de novo no banco. Esta camada evita que a tela sequer comece a carregar.
+    const role = (req.auth?.user as { role?: Role } | undefined)?.role;
 
-    if (!isLoggedIn || role !== "ADMIN") {
+    if (!isLoggedIn || !role || !hasAdminAccess({ id: "", role })) {
       return isApiRoute
         ? NextResponse.json({ error: "FORBIDDEN" }, { status: 403 })
         : NextResponse.redirect(new URL("/dashboard", req.nextUrl.origin));

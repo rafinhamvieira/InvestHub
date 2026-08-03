@@ -1,6 +1,6 @@
 import { userRepository } from "@/repositories/user.repository";
 import { loginAuditRepository } from "@/repositories/login-audit.repository";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { AUDIT_ACTIONS } from "@/constants/audit";
 import { passwordResetRepository } from "@/repositories/password-reset.repository";
 import { hashPassword, verifyPassword } from "@/lib/crypto";
@@ -99,7 +99,7 @@ export const accountService = {
 
     await userRepository.updatePasswordHash(userId, await hashPassword(input.newPassword));
     await passwordResetRepository.invalidateAllForUser(userId);
-    await auditLogRepository.record({
+    await auditService.record({
       userId,
       action: AUDIT_ACTIONS.PASSWORD_CHANGED,
       ipAddress: ctx.ipAddress,

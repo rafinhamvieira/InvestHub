@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, AdminAccessError } from "@/lib/admin-guard";
+import { requirePermission, authorizationStatus } from "@/lib/auth-guard";
+import { Permission } from "@/lib/permissions";
 import { adminUserService } from "@/services/admin-user.service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
@@ -14,10 +15,9 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   let admin;
   try {
-    admin = await requireAdmin();
+    admin = await requirePermission(Permission.MANAGE_USERS);
   } catch (error) {
-    const status = error instanceof AdminAccessError && error.code === "UNAUTHORIZED" ? 401 : 403;
-    return NextResponse.json({ error: "FORBIDDEN" }, { status });
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: authorizationStatus(error) });
   }
 
   const rateLimit = await checkRateLimit({

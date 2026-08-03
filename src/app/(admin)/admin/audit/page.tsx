@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
-import { adminAuditService } from "@/services/admin-audit.service";
+import { requirePermission } from "@/lib/auth-guard";
+import { Permission, can } from "@/lib/permissions";
+import { auditService } from "@/services/audit.service";
 import { AuditView } from "@/components/admin/audit-view";
 
-// Sempre renderizada por requisição: os dados vêm do banco e a permissão é conferida no
-// layout. Sem isto o Next tenta pré-renderizar no build, onde não há banco nem sessão.
+// Sempre renderizada por requisição: os dados vêm do banco e a permissão é conferida aqui.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Auditoria" };
 
 export default async function AdminAuditPage() {
-  // O layout já garantiu o papel de administrador antes desta página existir.
-  const initial = await adminAuditService.list({ page: 1, pageSize: 50 });
+  const admin = await requirePermission(Permission.VIEW_AUDIT);
+  const initial = await auditService.list({ pageSize: 50 });
 
-  return <AuditView initial={initial} />;
+  return (
+    <AuditView
+      initial={initial}
+      canVerifyIntegrity={can(admin, Permission.VERIFY_AUDIT_INTEGRITY)}
+    />
+  );
 }

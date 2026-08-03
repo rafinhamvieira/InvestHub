@@ -14,9 +14,26 @@ datasource db {
 // ENUMS
 // ============================================================
 
+/// Cargos da plataforma. A autorização nunca compara papéis diretamente: quem decide é o
+/// mapa de permissões em `src/lib/permissions.ts`. Cargo novo entra lá, não no código das telas.
 enum Role {
   USER
+  /// Somente leitura das telas administrativas.
+  READ_ONLY
+  /// Auditoria: lê trilha e central de segurança, não altera nada.
+  AUDITOR
+  /// Suporte: age sobre contas de usuário, sem tocar em plataforma nem backup.
+  SUPPORT
   ADMIN
+  /// Único que gerencia cargos, restaura backup e verifica a integridade da trilha.
+  SUPER_ADMIN
+}
+
+/// Origem da sessão — hoje só Web; os demais existem para o app e a API futura.
+enum SessionType {
+  WEB
+  MOBILE
+  API
 }
 
 enum RiskProfile {
@@ -90,44 +107,50 @@ enum ValuationMethod {
 // ============================================================
 
 model User {
-  id                      String      @id @default(cuid())
-  name                    String?
-  email                   String      @unique
-  emailVerified           DateTime?
-  image                   String?
-  passwordHash            String?
-  role                    Role        @default(USER)
-  riskProfile             RiskProfile @default(MODERATE)
-  currency                String      @default("BRL")
-  locale                  String      @default("pt-BR")
-  theme                   String      @default("system")
-  emailNotifications      Boolean     @default(true)
+  id                 String      @id @default(cuid())
+  name               String?
+  email              String      @unique
+  emailVerified      DateTime?
+  image              String?
+  passwordHash       String?
+  role               Role        @default(USER)
+  riskProfile        RiskProfile @default(MODERATE)
+  currency           String      @default("BRL")
+  locale             String      @default("pt-BR")
+  theme              String      @default("system")
+  emailNotifications Boolean     @default(true)
 
-  twoFactorEnabled        Boolean     @default(false)
-  twoFactorSecret         String?
-  twoFactorRecoveryCodes  String[]    @default([])
+  /// Tokens emitidos antes desta data param de valer — é o que faz "forçar logout" em bloco
+  /// funcionar com sessão apátrida.
+  sessionsValidFrom DateTime?
 
-  failedLoginAttempts     Int         @default(0)
-  lockedUntil             DateTime?
+  twoFactorEnabled       Boolean  @default(false)
+  twoFactorSecret        String?
+  twoFactorRecoveryCodes String[] @default([])
 
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
 
-  accounts                Account[]
-  sessions                Session[]
-  passwordResetTokens     PasswordResetToken[]
-  loginAudits             LoginAudit[]
-  auditLogs               AuditLog[]
-  brokers                 Broker[]
-  transactions            Transaction[]
-  positions               Position[]
-  dividendReceipts        DividendReceipt[]
-  allocationTargets       AllocationTarget[]
-  watchlists              Watchlist[]
-  alerts                  Alert[]
-  notifications           Notification[]
-  scoreWeight             ScoreWeight?
-  valuationAssumptions    ValuationAssumption[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts             Account[]
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+  loginAudits          LoginAudit[]
+  auditLogs            AuditLog[]            @relation("AuditTarget")
+  auditActions         AuditLog[]            @relation("AuditActor")
+  userSessions         UserSession[]
+  brokers              Broker[]
+  transactions         Transaction[]
+  positions            Position[]
+  dividendReceipts     DividendReceipt[]
+  allocationTargets    AllocationTarget[]
+  watchlists           Watchlist[]
+  alerts               Alert[]
+  notifications        Notification[]
+  scoreWeight          ScoreWeight?
+  valuationAssumptions ValuationAssumption[]
 
   @@map("users")
 }
@@ -207,24 +230,104 @@ model LoginAudit {
   @@map("login_audits")
 }
 
-/// Trilha de auditoria genérica para ações sensíveis (alteração de senha, exclusão de conta, mudança de e-mail etc.)
+/// Trilha de auditoria — **append-only**.
+///
+/// Não existe caminho de alteração: o banco recusa UPDATE e DELETE por trigger, o
+/// repositório só expõe `append()` e nenhuma rota escreve aqui sem passar pelo
+/// `auditService`. Correção de um registro errado é um registro novo, nunca uma edição.
+///
+/// `seq`, `prevHash` e `hash` formam a cadeia de integridade, calculada dentro do banco:
+/// vale para qualquer caminho de escrita, inclusive INSERT manual no psql.
+///
+/// E-mails de autor e alvo ficam denormalizados de propósito. As chaves estrangeiras usam
+/// SET NULL — RESTRICT impediria excluir qualquer conta que já tivesse gerado log, e
+/// cascata apagaria a trilha junto com o usuário. Com o e-mail na própria linha, o
+/// registro continua legível depois que a conta some.
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
+  id  String @id @default(cuid())
+  seq BigInt @unique @default(autoincrement())
+
+  action String
+  /// SUCCESS | FAILED
+  result String @default("SUCCESS")
+
+  /// Quem sofreu a ação.
+  userId      String?
+  targetEmail String?
+  /// Quem executou. Igual a `userId` quando o próprio usuário agiu.
+  actorId     String?
+  actorEmail  String?
+
+  sessionId String?
   entity    String?
   entityId  String?
+  /// Justificativa — obrigatória nas ações marcadas como críticas.
+  reason    String?
+  notes     String?
   metadata  Json?
+
   ipAddress String?
   userAgent String?
+
+  prevHash  String?
+  hash      String?
   createdAt DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user  User? @relation("AuditTarget", fields: [userId], references: [id], onDelete: SetNull)
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
 
-  @@index([userId])
-  @@index([action])
-  @@index([createdAt])
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([sessionId])
   @@map("audit_logs")
+}
+
+/// Âncora periódica da cadeia de auditoria.
+///
+/// Guarda o HMAC do hash de cabeça com uma chave que vive só no ambiente, nunca no banco.
+/// Recalcular a cadeia inteira para esconder um evento exigiria também essa chave.
+model AuditCheckpoint {
+  id        String   @id @default(cuid())
+  seq       BigInt
+  headHash  String
+  hmac      String
+  createdAt DateTime @default(now())
+
+  @@index([seq])
+  @@map("audit_checkpoints")
+}
+
+/// Sessão de acesso. O Auth.js opera com JWT, que é apátrida — este registro é o que
+/// permite listar, revogar e auditar sessões.
+model UserSession {
+  id     String      @id @default(cuid())
+  userId String
+  type   SessionType @default(WEB)
+
+  ipAddress   String?
+  userAgent   String?
+  browser     String?
+  os          String?
+  /// Cidade/região aproximada, preenchida só quando há provedor de geolocalização configurado.
+  location    String?
+  /// Impressão do dispositivo, quando o cliente enviar.
+  fingerprint String?
+
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  revokedAt        DateTime?
+  revokedBy        String?
+  revocationReason String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("user_sessions")
 }
 
 // ============================================================
@@ -251,8 +354,8 @@ model Asset {
   fundamentalsCheckedAt DateTime?
   dividendsCheckedAt    DateTime?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   fixedIncomeTerms     FixedIncomeTerms?
   fundamentals         AssetFundamental[]
@@ -349,7 +452,7 @@ model FixedIncomeTerms {
   indexer FixedIncomeIndexer
 
   /// Percentual do índice — 110 significa 110% do CDI. Nulo para IPCA+ e prefixado.
-  indexPercent Decimal? @db.Decimal(8, 4)
+  indexPercent  Decimal? @db.Decimal(8, 4)
   /// Juro real anual somado ao índice (IPCA + 6,00) ou taxa cheia do prefixado.
   spreadPercent Decimal? @db.Decimal(8, 4)
 

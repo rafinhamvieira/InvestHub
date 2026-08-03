@@ -93,7 +93,42 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 - **Vitest**: testes unitários de `services`, `utils`, `validators`.
 - **Playwright**: testes E2E de fluxos críticos (login, cadastro).
 
-## 8. Roadmap de entrega
 
-Fase 1 (esta entrega): arquitetura, estrutura de pastas, banco de dados, Prisma, autenticação, layout base.
-Fases seguintes (uma funcionalidade por vez, mediante confirmação): Dashboard → Carteira → Recomendação de Aporte → Alocação → Screener Ações/FIIs → Valuation → Tela do Ativo → Preço Teto → Watchlist/Alertas → Importação/Exportação → Perfil/Configurações → Integrações de mercado → Score Inteligente → IA opcional.
+## 9. Painel administrativo (separado do produto)
+
+Área `/admin` com layout, navegação e fronteira de dados próprios. Regras que a sustentam:
+
+- **Autorização só por permissão.** `src/lib/permissions.ts` define `Permission` e o mapa cargo → permissões (`USER`, `READ_ONLY`, `AUDITOR`, `SUPPORT`, `ADMIN`, `SUPER_ADMIN`). Nenhum outro arquivo compara papéis — há teste que varre `src/` e falha se um `role === "..."` reaparecer.
+- **Três barreiras por requisição.** Middleware (triagem pelo token) → `requirePermission()` (cargo lido do banco, sessão viva) → permissão da rota. O token vale 30 dias; só o banco sabe o cargo de agora.
+- **Step-up.** Ações críticas exigem senha (e MFA, se ativo) confirmada nos últimos 10 minutos, guardada no Redis, nunca no token.
+- **Fronteira de privacidade.** Serviços administrativos não importam `portfolio.service`, `transaction.repository`, `position.repository` e afins — teste vigia os imports. Administrador nunca vê carteira alheia.
+
+## 10. Auditoria append-only
+
+`audit_logs` é prova, não relatório:
+
+| Camada | Garantia |
+|---|---|
+| Banco | Triggers recusam `UPDATE`, `DELETE` e `TRUNCATE` |
+| Repositório | Expõe apenas `append()` — não existe método de alteração |
+| Serviço | `auditService` é a porta única de escrita |
+| Cadeia | `seq` monotônico + `prevHash`/`hash` calculados por trigger |
+| Âncora | Checkpoints com HMAC de chave que vive só no ambiente (`AUDIT_HMAC_KEY`) |
+
+**Política de falha:** evento crítico de segurança (login, senha, MFA, e-mail, cargos, restauração) aborta a operação se o log não gravar; evento comum (perfil, preferências) registra o erro nos logs da aplicação e segue.
+
+**Verificação:** `GET /api/admin/audit/integrity` (`VERIFY_AUDIT_INTEGRITY`, só SUPER_ADMIN) recomputa a cadeia e devolve total de registros, último checkpoint válido, primeiro registro divergente com hash esperado × encontrado e sequências ausentes. Somente leitura.
+
+## 11. Sessões
+
+O Auth.js opera com JWT, que não guarda estado. `user_sessions` dá identidade ao acesso: tipo, navegador, sistema, localização aproximada (só com `GEOIP_URL` configurada), fingerprint, última atividade, revogação com autor e motivo. `users.sessionsValidFrom` invalida em bloco tudo que nasceu antes dela — é o que faz "forçar logout" funcionar sem estado por token.
+
+## 12. Renda fixa
+
+Título não tem cotação: ganha **valor unitário sintético** (1,00 na emissão, corrigido pela curva do BCB — CDI/Selic diários, IPCA mensal). A compra vira `quantidade = valor aplicado ÷ valor unitário na data`, e posição, patrimônio, evolução e alocação seguem funcionando sem exceção no código.
+
+## 13. Roadmap
+
+Fases de produto (dashboard, carteira, aporte, alocação, screeners, valuation, ativo, watchlist, importação, proventos, renda fixa) — **entregues**.
+
+Painel administrativo profissional, em 10 etapas, uma por vez com confirmação: **1. Auditoria (entregue)** · 2. Dashboard administrativo · 3. Gestão de usuários · 4. Backup completo com restauração · 5. Logs da aplicação · 6. Telas de RBAC · 7. Monitoramento · 8. Configurações da plataforma · 9. Central de segurança (inclui checkpoints de auditoria em armazenamento externo WORM) · 10. Auditoria administrativa.

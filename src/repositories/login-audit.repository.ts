@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
-import type { AuditFilters } from "@/types/audit";
+
+
 
 interface RecordLoginAttemptInput {
   userId?: string | null;
@@ -33,23 +33,6 @@ export const loginAuditRepository = {
     });
   },
 
-  /** Trilha de acessos de toda a plataforma — a outra metade da auditoria. */
-  async listAll(filters: AuditFilters) {
-    const where = buildLoginWhere(filters);
-
-    const [rows, total] = await Promise.all([
-      prisma.loginAudit.findMany({
-        where,
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: "desc" },
-        skip: (filters.page - 1) * filters.pageSize,
-        take: filters.pageSize,
-      }),
-      prisma.loginAudit.count({ where }),
-    ]);
-
-    return { rows, total };
-  },
 
   /** Último acesso bem-sucedido de cada usuário, para a listagem da administração. */
   async lastSuccessByUsers(userIds: string[]): Promise<Map<string, Date>> {
@@ -69,25 +52,3 @@ export const loginAuditRepository = {
   },
 };
 
-/**
- * Filtro da trilha de acessos.
- *
- * A busca aqui bate no campo `email` da própria tabela, não no cadastro: tentativa de login
- * em e-mail inexistente não tem usuário associado, e é justamente esse caso que interessa
- * numa investigação de acesso indevido.
- */
-export function buildLoginWhere(filters: AuditFilters): Prisma.LoginAuditWhereInput {
-  const where: Prisma.LoginAuditWhereInput = {};
-
-  if (filters.userId) where.userId = filters.userId;
-  if (filters.search) where.email = { contains: filters.search, mode: "insensitive" };
-
-  if (filters.from || filters.to) {
-    where.createdAt = {
-      ...(filters.from ? { gte: new Date(filters.from) } : {}),
-      ...(filters.to ? { lte: new Date(filters.to) } : {}),
-    };
-  }
-
-  return where;
-}

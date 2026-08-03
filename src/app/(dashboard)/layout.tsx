@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import { auth } from "@/lib/auth";
-import { isAdmin } from "@/lib/admin-guard";
+import { currentPrincipal } from "@/lib/auth-guard";
+import { hasAdminAccess } from "@/lib/permissions";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   const user = session!.user;
-  const admin = await isAdmin();
+  const admin = hasAdminAccess(await currentPrincipal());
 
   return (
     <div className="flex min-h-screen">

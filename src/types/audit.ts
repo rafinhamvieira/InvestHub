@@ -1,78 +1,106 @@
 import type { AuditCategory } from "@/constants/audit";
+import type { Role, SessionType } from "@prisma/client";
 
-/**
- * Evento de auditoria já normalizado para a tela.
- *
- * `LoginAudit` e `AuditLog` são tabelas separadas — uma guarda tentativa de acesso, a outra
- * ação sensível — mas para quem investiga um incidente elas são a mesma linha do tempo.
- * A fusão acontece na leitura; gravar tudo numa tabela só custaria o índice por e-mail que
- * a auditoria de login precisa para achar tentativa de conta inexistente.
- */
+/** Evento de auditoria normalizado para a tela e para a exportação. */
 export interface AuditEntry {
   id: string;
-  /** "LOGIN" para a trilha de acesso, "ACTION" para a trilha de ações. */
-  source: "LOGIN" | "ACTION";
+  seq: string;
   action: string;
   label: string;
   category: AuditCategory;
-  /** Null quando o evento não pertence a uma conta existente (ex: login em e-mail inválido). */
-  userId: string | null;
-  userName: string | null;
-  userEmail: string | null;
-  success: boolean | null;
-  /** Motivo da falha, já traduzido. */
+  result: "SUCCESS" | "FAILED";
+
+  /** Quem sofreu a ação. */
+  targetName: string | null;
+  targetEmail: string | null;
+  /** Quem executou; null em evento do próprio sistema. */
+  actorName: string | null;
+  actorEmail: string | null;
+  /** True quando autor e alvo são a mesma pessoa. */
+  selfService: boolean;
+
+  sessionId: string | null;
   reason: string | null;
+  notes: string | null;
+  description: string;
   ipAddress: string | null;
   userAgent: string | null;
-  /** Alvo de uma ação administrativa. */
-  targetUserId: string | null;
   createdAt: string;
 }
 
 export interface AuditFilters {
-  /** Busca por nome ou e-mail. */
   search?: string;
   category?: AuditCategory;
+  action?: string;
+  result?: "SUCCESS" | "FAILED";
   userId?: string;
   /** ISO. */
   from?: string;
   to?: string;
-  page: number;
-  pageSize: number;
-}
-
-/**
- * Usuário como o painel administrativo o enxerga.
- *
- * A lista de campos é a fronteira de privacidade do produto: identidade, estado de acesso e
- * segurança — nada de patrimônio, posições, transações ou metas. Se um campo financeiro
- * aparecer aqui um dia, foi por engano.
- */
-export interface AdminUserRow {
-  id: string;
-  name: string | null;
-  email: string;
-  role: "USER" | "ADMIN";
-  emailVerified: boolean;
-  twoFactorEnabled: boolean;
-  /** ISO enquanto o bloqueio estiver valendo; null quando a conta está liberada. */
-  lockedUntil: string | null;
-  failedLoginAttempts: number;
-  lastLoginAt: string | null;
-  /** Horas restantes para confirmar o e-mail antes da remoção automática; null quando já confirmou. */
-  expiresInHours: number | null;
-  createdAt: string;
-}
-
-export interface AdminUserPage {
-  users: AdminUserRow[];
-  total: number;
-  page: number;
+  /** `seq` do último item da página anterior. */
+  cursor?: string;
   pageSize: number;
 }
 
 export interface AuditPage {
   entries: AuditEntry[];
+  /** `seq` para pedir a próxima página; null quando acabou. */
+  nextCursor: string | null;
+  total: number;
+}
+
+/** Resultado da verificação da cadeia de integridade. */
+export interface IntegrityReport {
+  totalRecords: number;
+  /** Último checkpoint cujo HMAC confere. */
+  lastValidCheckpoint: { seq: string; createdAt: string } | null;
+  /** Primeiro registro com hash divergente; null quando a cadeia está íntegra. */
+  firstInvalidRecord: {
+    seq: string;
+    expectedHash: string;
+    foundHash: string | null;
+    createdAt: string;
+  } | null;
+  /** Buracos na sequência — evidência de remoção. */
+  missingSequences: string[];
+  verifiedAt: string;
+  durationMs: number;
+  valid: boolean;
+}
+
+export interface SessionDTO {
+  id: string;
+  type: SessionType;
+  browser: string | null;
+  os: string | null;
+  location: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revocationReason: string | null;
+  /** True para a sessão de onde a requisição atual veio. */
+  current: boolean;
+}
+
+export interface AdminUserRow {
+  id: string;
+  name: string | null;
+  email: string;
+  role: Role;
+  emailVerified: boolean;
+  twoFactorEnabled: boolean;
+  lockedUntil: string | null;
+  failedLoginAttempts: number;
+  lastLoginAt: string | null;
+  expiresInHours: number | null;
+  activeSessions: number;
+  createdAt: string;
+}
+
+export interface AdminUserPage {
+  users: AdminUserRow[];
   total: number;
   page: number;
   pageSize: number;

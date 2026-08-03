@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { User } from "@prisma/client";
+import type { Role, User } from "@prisma/client";
 
 export const userRepository = {
   findByEmail(email: string): Promise<User | null> {
@@ -63,7 +63,7 @@ export const userRepository = {
     });
   },
 
-  setRole(userId: string, role: "USER" | "ADMIN"): Promise<User> {
+  setRole(userId: string, role: Role): Promise<User> {
     return prisma.user.update({ where: { id: userId }, data: { role } });
   },
 

@@ -3,9 +3,10 @@ import { z } from "zod";
 import { createReadStream } from "node:fs";
 import { createCipheriv } from "node:crypto";
 import { Readable } from "node:stream";
-import { requireAdmin, AdminAccessError } from "@/lib/admin-guard";
+import { requirePermission, authorizationStatus } from "@/lib/auth-guard";
+import { Permission } from "@/lib/permissions";
 import { adminBackupService, BackupError } from "@/services/admin-backup.service";
-import { auditLogRepository } from "@/repositories/audit-log.repository";
+import { auditService } from "@/services/audit.service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getClientIp, getUserAgent } from "@/utils/request";
 import { AUDIT_ACTIONS } from "@/constants/audit";
@@ -42,10 +43,9 @@ const bodySchema = z.object({
 export async function POST(request: Request, { params }: { params: Promise<{ file: string }> }) {
   let admin;
   try {
-    admin = await requireAdmin();
+    admin = await requirePermission(Permission.MANAGE_BACKUPS);
   } catch (error) {
-    const status = error instanceof AdminAccessError && error.code === "UNAUTHORIZED" ? 401 : 403;
-    return NextResponse.json({ error: "FORBIDDEN" }, { status });
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: authorizationStatus(error) });
   }
 
   const rateLimit = await checkRateLimit({
@@ -78,7 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ fil
     const cipher = createCipheriv(CIPHER_ALGORITHM, key, iv);
 
     const [ipAddress, userAgent] = await Promise.all([getClientIp(), getUserAgent()]);
-    await auditLogRepository.record({
+    await auditService.record({
       userId: admin.id,
       action: AUDIT_ACTIONS.ADMIN_BACKUP_DOWNLOADED,
       entity: "Backup",

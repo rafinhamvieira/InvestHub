@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AdminAccessError, requireAdmin } from "@/lib/admin-guard";
+import { requirePermission, AuthorizationError } from "@/lib/auth-guard";
+import { Permission } from "@/lib/permissions";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
@@ -15,9 +16,10 @@ export const metadata: Metadata = { title: "Administração" };
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   let admin;
   try {
-    admin = await requireAdmin();
+    // Qualquer permissão administrativa dá acesso ao painel; cada página exige a sua.
+    admin = await requirePermission(Permission.VIEW_AUDIT);
   } catch (error) {
-    redirect(error instanceof AdminAccessError && error.code === "UNAUTHORIZED" ? "/login" : "/dashboard");
+    redirect(error instanceof AuthorizationError && error.code === "UNAUTHORIZED" ? "/login" : "/dashboard");
   }
 
   return (
