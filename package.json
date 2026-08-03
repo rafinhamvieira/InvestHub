@@ -24,7 +24,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:studio": "prisma studio",
     "email:test": "tsx scripts/test-email.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "fonts:fetch": "tsx scripts/fetch-fonts.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

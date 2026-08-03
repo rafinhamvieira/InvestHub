@@ -1,13 +1,38 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppSessionProvider } from "@/components/session-provider";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+/**
+ * Fontes servidas do próprio repositório, não do Google.
+ *
+ * `next/font/google` baixa os arquivos a cada `next build`. Isso transforma toda publicação
+ * em refém do DNS: já derrubou o deploy aqui, com o build falhando em `fonts.googleapis.com`
+ * por um problema de rede que nada tinha a ver com o código. Com os `.woff2` versionados, o
+ * build inteiro roda offline.
+ *
+ * Vantagem de privacidade que vem junto: nenhum visitante bate no servidor do Google para
+ * carregar a página.
+ *
+ * Os arquivos vêm de `scripts/fetch-fonts.ts`. Ambos são variáveis — um arquivo só cobre a
+ * faixa inteira de pesos.
+ */
+const inter = localFont({
+  src: "../fonts/inter-latin.woff2",
+  weight: "100 900",
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const jetbrainsMono = localFont({
+  src: "../fonts/jetbrains-mono-latin.woff2",
+  weight: "100 800",
+  variable: "--font-mono",
+  display: "swap",
+});
 
 /**
  * Base para resolver os caminhos relativos das imagens de pré-visualização.
