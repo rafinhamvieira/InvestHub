@@ -78,8 +78,12 @@ describe.skipIf(!hasDatabase)("trilha de auditoria no banco", () => {
 
   it("hash calculado pelo banco confere com o recomputado pela aplicação", async () => {
     // Se o payload do trigger e o da verificação divergirem, a integridade acusaria
-    // adulteração onde não houve — é o ponto mais frágil do mecanismo.
+    // adulteração onde não houve. Foi exatamente o que aconteceu em produção: `metadata` é
+    // jsonb, `jsonb::text` normaliza a saída e `JSON.stringify` não — todo registro com
+    // metadados aparecia como quebrado. Este caso já cobria isso; ele nunca rodou, porque a
+    // suíte de integração se ignora sem TEST_DATABASE_URL.
     const { computeHash } = await import("@/services/audit-integrity.service");
+    const { auditLogRepository } = await import("@/repositories/audit-log.repository");
 
     await append("LOGIN_SUCCESS", {
       userId: null,
@@ -88,10 +92,28 @@ describe.skipIf(!hasDatabase)("trilha de auditoria no banco", () => {
       sessionId: "sess-1",
       ipAddress: "203.0.113.9",
       reason: "motivo registrado",
-      metadata: { origem: "teste" },
+      // Mais de uma chave de propósito: o jsonb reordena, e a ordem entra no hash.
+      metadata: { origem: "teste", tentativas: 2, detalhe: { alvo: "x" } },
     });
 
-    const [row] = await prisma.auditLog.findMany({ orderBy: { seq: "asc" } });
-    expect(computeHash(row as never, row!.prevHash)).toBe(row!.hash);
+    const [row] = await auditLogRepository.chainSlice(0n, 10);
+    expect(computeHash(row!, null)).toBe(row!.hash);
+  });
+
+  it("encadeia sobre o hash do registro anterior, e não sobre o prevHash guardado", async () => {
+    await append("LOGIN_SUCCESS", { metadata: { a: 1 } });
+    await append("LOGOUT", { metadata: { b: [1, 2, 3] } });
+    await append("PASSWORD_CHANGED");
+
+    const { computeHash } = await import("@/services/audit-integrity.service");
+    const { auditLogRepository } = await import("@/repositories/audit-log.repository");
+
+    const rows = await auditLogRepository.chainSlice(0n, 10);
+    let anterior: string | null = null;
+
+    for (const row of rows) {
+      expect(computeHash(row, anterior)).toBe(row.hash);
+      anterior = row.hash;
+    }
   });
 });

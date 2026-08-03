@@ -28,36 +28,19 @@ const CHECKPOINT_EVERY = 500;
 type ChainRow = Awaited<ReturnType<typeof auditLogRepository.chainSlice>>[number];
 
 /**
- * Reproduz exatamente o payload que o trigger do banco monta.
+ * Monta o payload que o trigger do banco assinou.
  *
- * Qualquer divergência aqui — ordem dos campos, formato da data, tratamento de nulo — faria
- * a verificação acusar adulteração onde não houve. É o ponto mais frágil do mecanismo, e o
- * motivo de existir teste comparando com o resultado real do Postgres.
+ * Só os dois primeiros campos são responsabilidade daqui — `seq` e o hash do registro
+ * anterior. Todo o resto chega pronto em `payloadTail`, renderizado pelo próprio Postgres
+ * com a expressão do trigger.
+ *
+ * A repartição não é estética. Reproduzir em JavaScript o `jsonb::text` e o `to_char` do
+ * Postgres é refazer o Postgres: a primeira versão fazia isso e acusava adulteração em todo
+ * registro com metadados, porque `jsonb` normaliza a saída e `JSON.stringify` não. O que
+ * sobrou aqui — dois campos que a própria verificação controla — não tem como divergir.
  */
 export function chainPayload(row: ChainRow, prevHash: string | null): string {
-  const timestamp = row.createdAt
-    .toISOString()
-    .replace("T", "T")
-    .replace("Z", "")
-    .slice(0, 23);
-
-  return [
-    row.seq.toString(),
-    prevHash ?? "",
-    row.action,
-    row.result,
-    row.userId ?? "",
-    row.actorId ?? "",
-    row.targetEmail ?? "",
-    row.actorEmail ?? "",
-    row.sessionId ?? "",
-    row.entity ?? "",
-    row.entityId ?? "",
-    row.reason ?? "",
-    row.ipAddress ?? "",
-    row.metadata === null ? "" : JSON.stringify(row.metadata),
-    timestamp,
-  ].join("|");
+  return [row.seq.toString(), prevHash ?? "", row.payloadTail].join("|");
 }
 
 export function computeHash(row: ChainRow, prevHash: string | null): string {

@@ -13,10 +13,12 @@ export interface BackupFile {
 }
 
 /**
- * Números de negócio do painel — sempre agregados, nunca por pessoa.
+ * Números do painel — tamanho do cadastro e cobertura dos dados de mercado.
  *
- * A tela administrativa mostra o tamanho da operação; quem precisa olhar uma conta
- * específica vai para `/admin/users`, onde a ação fica auditada com autor e motivo.
+ * **Não existe aqui nada de carteira.** Patrimônio, transações, proventos e renda fixa
+ * ficaram de fora por decisão do dono do projeto: a promessa ao usuário é que ninguém
+ * enxerga a carteira alheia, e um total agregado ainda é feito do dinheiro de pessoas que
+ * não autorizaram ninguém a somá-lo. A regra vale para o número, não só para a linha.
  */
 export interface BusinessMetrics {
   users: {
@@ -30,31 +32,6 @@ export interface BusinessMetrics {
     twoFactor: number;
     /** Contas com algum cargo administrativo. */
     staff: number;
-  };
-  portfolio: {
-    /** Contas com pelo menos uma posição aberta. */
-    investors: number;
-    /** Soma do custo das posições abertas — o que entrou, não o valor de mercado. */
-    totalInvested: number;
-    positions: number;
-    transactions: number;
-    transactions30d: number;
-    /** Ativos distintos presentes em alguma carteira. */
-    assetsHeld: number;
-  };
-  dividends: {
-    /** Creditado aos usuários nos últimos 12 meses. */
-    received12m: number;
-    receipts12m: number;
-    /** Proventos anunciados a pagar nos próximos 30 dias em ativos que alguém tem. */
-    upcoming30d: number;
-  };
-  fixedIncome: {
-    /** Contas com algum título em carteira. */
-    holders: number;
-    /** Títulos distintos em carteira. */
-    titles: number;
-    invested: number;
   };
   coverage: {
     activeAssets: number;

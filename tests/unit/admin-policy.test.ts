@@ -142,14 +142,37 @@ describe("fronteira de privacidade do painel", () => {
   });
 
   /**
-   * O painel de números é a única parte do administrativo que toca em posições, transações e
-   * proventos — e só pode contar e somar. A lista de imports proibidos não protegeria isso:
-   * o repositório fala com o Prisma diretamente. Aqui a trava é a operação, não o módulo.
+   * O painel de números não toca em tabela financeira — nem para contar, nem para somar.
    *
-   * Sem ela, um `findMany` acrescentado numa manutenção futura transformaria a tela de
-   * números na listagem de carteiras alheias que a fronteira inteira existe para impedir.
+   * A primeira versão trazia patrimônio sob gestão e proventos em forma agregada. O dono do
+   * projeto recusou: o total é feito do dinheiro de pessoas que não autorizaram ninguém a
+   * somá-lo, e "agregado" descreve a apresentação, não a origem do dado.
+   *
+   * A lista de imports proibidos não cobriria isto, porque o repositório fala com o Prisma
+   * direto — daí a trava ser sobre o modelo acessado.
    */
-  it("o repositório de métricas só conta, soma e agrupa", () => {
+  const MODELOS_FINANCEIROS = [
+    "prisma.position",
+    "prisma.transaction",
+    "prisma.dividendReceipt",
+    "prisma.assetDividend",
+    "prisma.fixedIncomeTerms",
+    "prisma.allocationTarget",
+  ];
+
+  it("o repositório de métricas não acessa tabela financeira", () => {
+    const conteudo = readFileSync(
+      join(process.cwd(), "src/repositories/admin-metrics.repository.ts"),
+      "utf8",
+    );
+
+    for (const modelo of MODELOS_FINANCEIROS) {
+      expect(conteudo).not.toContain(modelo);
+    }
+  });
+
+  it("o repositório de métricas só conta e agrupa", () => {
+    // Segunda trava: mesmo sobre tabelas permitidas, contar é diferente de listar.
     const conteudo = readFileSync(
       join(process.cwd(), "src/repositories/admin-metrics.repository.ts"),
       "utf8",

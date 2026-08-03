@@ -102,7 +102,7 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 - **Três barreiras por requisição.** Middleware (triagem pelo token) → `requirePermission()` (cargo lido do banco, sessão viva) → permissão da rota. O token vale 30 dias; só o banco sabe o cargo de agora.
 - **Step-up.** Ações críticas exigem senha (e MFA, se ativo) confirmada nos últimos 10 minutos, guardada no Redis, nunca no token.
 - **Fronteira de privacidade.** Serviços administrativos não importam `portfolio.service`, `transaction.repository`, `position.repository` e afins — teste vigia os imports. Administrador nunca vê carteira alheia.
-- **Números só agregados.** `admin-metrics.repository` é a única porta do painel para as tabelas financeiras, e só pode contar, somar e agrupar: teste falha se um `findMany`, `findFirst`, `findUnique` ou `$queryRaw` aparecer ali. É o que impede a tela de números de virar, por manutenção distraída, a listagem de carteiras que a fronteira proíbe.
+- **Nenhum dado financeiro no painel, nem agregado.** `admin-metrics.repository` não acessa tabela financeira alguma — dois testes recusam tanto o acesso ao modelo quanto a consulta que devolva linhas. O painel mostra tamanho do cadastro e cobertura do catálogo de mercado; patrimônio, transações, proventos e renda fixa ficaram de fora por decisão do dono do projeto, porque o total agregado ainda é feito do dinheiro de pessoas que não autorizaram ninguém a somá-lo.
 - **Saúde: medir e julgar são coisas separadas.** `admin-health.service` só sonda (banco, Redis, sincronização, backup, âncoras da auditoria); os limiares que transformam medição em `ok`/`warn`/`down` vivem em `utils/health-status`, puro e testado. Sondagem que falha vira `down` na própria linha, sem derrubar o resumo.
 
 ## 10. Auditoria append-only
@@ -120,6 +120,8 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 **Política de falha:** evento crítico de segurança (login, senha, MFA, e-mail, cargos, restauração) aborta a operação se o log não gravar; evento comum (perfil, preferências) registra o erro nos logs da aplicação e segue.
 
 **Verificação:** `GET /api/admin/audit/integrity` (`VERIFY_AUDIT_INTEGRITY`, só SUPER_ADMIN) recomputa a cadeia e devolve total de registros, registros anteriores à cadeia, último checkpoint válido, primeiro registro divergente com hash esperado × encontrado e sequências ausentes. Somente leitura.
+
+**O payload não é remontado em JavaScript.** O banco devolve o texto que o trigger assinou, com a mesma expressão SQL; o Node só calcula o SHA-256 sobre ele e compara com o hash gravado. Reproduzir `jsonb::text` e `to_char` em JS é refazer o Postgres — e foi o que fez a verificação acusar adulteração em todo registro com metadados. O hash continua sendo calculado fora do banco: o que ele faz é renderizar colunas que já guarda, não atestar a própria trilha. A verificação usa o hash do registro anterior que ela mesma conferiu, nunca o `prevHash` gravado na linha.
 
 **Registros anteriores à cadeia.** A tabela existia antes do trigger, e a migração acrescentou as colunas de hash sem preencher o que já estava lá. Esses registros formam um prefixo sem hash: são contados e declarados no laudo, não verificados. Hash vazio depois do início da cadeia é divergência — o trigger não produz isso e o banco recusa `UPDATE`. Preencher os antigos retroativamente foi descartado: daria cadeia coerente sobre dados nunca protegidos, isto é, garantia fabricada.
 

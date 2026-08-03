@@ -5,22 +5,19 @@ import { toast } from "sonner";
 import {
   Activity,
   AlertTriangle,
-  CalendarClock,
   CheckCircle2,
   Coins,
   Database,
-  Landmark,
+  LineChart,
   Loader2,
   RefreshCw,
   ShieldCheck,
-  TrendingUp,
   UserPlus,
   Users,
-  Wallet,
   XCircle,
 } from "lucide-react";
 import { extractApiError } from "@/utils/api-error";
-import { formatCompactCurrency, formatCurrency, formatDuration, formatPercent } from "@/utils/format";
+import { formatDuration, formatPercent } from "@/utils/format";
 import { cn } from "@/lib/utils";
 import type { AdminDashboard, HealthCheck, HealthStatus } from "@/types/admin";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -144,66 +141,37 @@ export function AdminDashboardView({ initial }: { initial: AdminDashboard }) {
             />
           </Section>
 
-          <Section title="Carteiras">
+          <Section title="Dados de mercado">
             <StatCard
-              title="Investidores"
-              value={metrics.portfolio.investors.toLocaleString("pt-BR")}
-              icon={Wallet}
-              hint={`${metrics.portfolio.positions} posições abertas`}
-            />
-            <StatCard
-              title="Custo das posições"
-              value={formatCompactCurrency(metrics.portfolio.totalInvested)}
-              icon={TrendingUp}
-              hint={formatCurrency(metrics.portfolio.totalInvested)}
-            />
-            <StatCard
-              title="Transações"
-              value={metrics.portfolio.transactions.toLocaleString("pt-BR")}
-              icon={CalendarClock}
-              hint={`${metrics.portfolio.transactions30d} nos últimos 30 dias`}
-            />
-            <StatCard
-              title="Ativos em carteira"
-              value={metrics.portfolio.assetsHeld.toLocaleString("pt-BR")}
+              title="Ativos no catálogo"
+              value={metrics.coverage.activeAssets.toLocaleString("pt-BR")}
               icon={Database}
-              hint="Distintos, somando todas as contas"
-            />
-          </Section>
-
-          <Section title="Proventos e renda fixa">
-            <StatCard
-              title="Creditado em 12 meses"
-              value={formatCompactCurrency(metrics.dividends.received12m)}
-              icon={Coins}
-              tone={metrics.dividends.received12m > 0 ? "positive" : "neutral"}
-              hint={`${metrics.dividends.receipts12m} créditos`}
-            />
-            <StatCard
-              title="A pagar em 30 dias"
-              value={metrics.dividends.upcoming30d.toLocaleString("pt-BR")}
-              icon={CalendarClock}
-              hint="Anúncios em ativos que alguém tem"
-            />
-            <StatCard
-              title="Renda fixa investida"
-              value={formatCompactCurrency(metrics.fixedIncome.invested)}
-              icon={Landmark}
-              hint={`${metrics.fixedIncome.holders} contas · ${metrics.fixedIncome.titles} títulos`}
+              hint="Espelhados do provedor, prontos para o screener"
             />
             <StatCard
               title="Cobertura de fundamentos"
               value={formatPercent(metrics.coverage.fundamentalsRatio)}
-              icon={Database}
-              hint={`${metrics.coverage.withFundamentals} de ${metrics.coverage.activeAssets} ativos · ${metrics.coverage.withDividends} com proventos`}
+              icon={LineChart}
+              hint={`${metrics.coverage.withFundamentals} de ${metrics.coverage.activeAssets} ativos`}
+            />
+            <StatCard
+              title="Com proventos importados"
+              value={metrics.coverage.withDividends.toLocaleString("pt-BR")}
+              icon={Coins}
+              hint="Base do Dividend Yield calculado localmente"
             />
           </Section>
+
+          <p className="text-xs text-muted-foreground">
+            Este painel não mostra carteira, patrimônio, transações nem proventos de
+            usuários — nem somados. A promessa de que ninguém enxerga a carteira alheia vale
+            para o total tanto quanto para a linha.
+          </p>
         </>
       ) : (
         <Card>
           <CardContent className="p-5 text-sm text-muted-foreground">
-            Seu cargo enxerga o estado dos serviços, mas não os números de negócio da
-            plataforma.
+            Seu cargo enxerga o estado dos serviços, mas não os números da plataforma.
           </CardContent>
         </Card>
       )}

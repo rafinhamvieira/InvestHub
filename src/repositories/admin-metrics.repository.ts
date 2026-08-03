@@ -4,17 +4,21 @@ import { adminRoles } from "@/lib/permissions";
 /**
  * Agregados da plataforma para o painel administrativo.
  *
- * Tudo aqui é `COUNT` e `SUM` — nenhuma consulta devolve linha de usuário. A separação é
- * deliberada: a tela de números não deve ser capaz de virar uma listagem de pessoas por
- * descuido de quem mexer nela depois.
+ * **Este arquivo não toca em tabela financeira.** Nem para contar, nem para somar. A
+ * primeira versão trazia patrimônio sob gestão, transações e proventos em forma agregada; o
+ * dono do projeto recusou, e a recusa é a leitura certa: o total é feito do dinheiro de
+ * pessoas que não autorizaram ninguém a somá-lo, e "agregado" só descreve a apresentação,
+ * não a origem do dado. A promessa vale para o número tanto quanto para a linha.
  *
- * Contagens distintas usam `groupBy` porque o Prisma não expõe `COUNT(DISTINCT)`. O custo é
- * trazer as chaves para a aplicação; nas ordens de grandeza desta base (milhares de
- * posições) sai mais barato que manter SQL cru, que perderia a checagem de tipos do schema.
+ * O que sobra é o tamanho do cadastro — informação de operação, já visível em `/admin/users`
+ * — e a cobertura do catálogo de mercado, que é dado público de ativo, de ninguém.
+ *
+ * Dois testes vigiam este arquivo: um recusa qualquer acesso a modelo financeiro, outro
+ * recusa consulta que devolva linhas em vez de contagem. Duas travas, porque a tentação de
+ * "só mais um número" é permanente.
+ *
+ * Contagens distintas usam `groupBy` porque o Prisma não expõe `COUNT(DISTINCT)`.
  */
-
-/** Posição encerrada continua na tabela com quantidade zero; ela não conta como carteira. */
-const OPEN_POSITION = { quantity: { gt: 0 } } as const;
 
 export const adminMetricsRepository = {
   async users(since7d: Date, since30d: Date) {
@@ -35,73 +39,12 @@ export const adminMetricsRepository = {
     return { total, new7d, new30d, unverified, twoFactor, staff, active30d: activeSessions.length };
   },
 
-  async portfolio(since30d: Date) {
-    const [investors, invested, positions, assetsHeld, transactions, transactions30d] =
-      await Promise.all([
-        prisma.position.groupBy({ by: ["userId"], where: OPEN_POSITION }),
-        prisma.position.aggregate({ _sum: { totalInvested: true }, where: OPEN_POSITION }),
-        prisma.position.count({ where: OPEN_POSITION }),
-        prisma.position.groupBy({ by: ["assetId"], where: OPEN_POSITION }),
-        prisma.transaction.count(),
-        prisma.transaction.count({ where: { date: { gte: since30d } } }),
-      ]);
-
-    return {
-      investors: investors.length,
-      totalInvested: Number(invested._sum.totalInvested ?? 0),
-      positions,
-      assetsHeld: assetsHeld.length,
-      transactions,
-      transactions30d,
-    };
-  },
-
-  /**
-   * O recibo é criado no dia em que o provento cai na carteira, então `createdAt` é a data
-   * do crédito — não a de anúncio nem a de ex-dividendo. É a leitura que responde "quanto a
-   * base recebeu no último ano".
-   */
-  async dividends(since12m: Date, now: Date, until30d: Date) {
-    const [received, upcoming] = await Promise.all([
-      prisma.dividendReceipt.aggregate({
-        _sum: { totalReceived: true },
-        _count: true,
-        where: { createdAt: { gte: since12m } },
-      }),
-      prisma.assetDividend.count({
-        where: {
-          paymentDate: { gte: now, lte: until30d },
-          asset: { positions: { some: OPEN_POSITION } },
-        },
-      }),
-    ]);
-
-    return {
-      received12m: Number(received._sum.totalReceived ?? 0),
-      receipts12m: received._count,
-      upcoming30d: upcoming,
-    };
-  },
-
-  async fixedIncome() {
-    const where = { ...OPEN_POSITION, asset: { fixedIncomeTerms: { isNot: null } } };
-
-    const [holders, titles, invested] = await Promise.all([
-      prisma.position.groupBy({ by: ["userId"], where }),
-      prisma.position.groupBy({ by: ["assetId"], where }),
-      prisma.position.aggregate({ _sum: { totalInvested: true }, where }),
-    ]);
-
-    return {
-      holders: holders.length,
-      titles: titles.length,
-      invested: Number(invested._sum.totalInvested ?? 0),
-    };
-  },
-
   /**
    * Avanço da rotação de dados de mercado. É o número que diz se vale assinar o plano pago
    * do provedor de fundamentos: com a cota gratuita, a cobertura sobe alguns pontos por dia.
+   *
+   * Catálogo de ativos é dado público — não pertence a nenhum usuário e não revela nada
+   * sobre quem investe em quê.
    */
   async coverage() {
     const active = { isActive: true } as const;

@@ -15,21 +15,10 @@ type Row = Parameters<typeof computeHash>[0];
 function linha(seq: bigint, overrides: Partial<Row> = {}): Row {
   return {
     seq,
-    prevHash: null,
     hash: null,
-    action: "LOGIN_SUCCESS",
-    result: "SUCCESS",
-    userId: "u1",
-    actorId: null,
-    targetEmail: null,
-    actorEmail: null,
-    sessionId: null,
-    entity: null,
-    entityId: null,
-    reason: null,
-    ipAddress: null,
-    metadata: null,
     createdAt: new Date("2026-08-01T10:00:00.000Z"),
+    // O banco entrega este texto pronto; para a caminhada, ele é opaco.
+    payloadTail: `LOGIN_SUCCESS|SUCCESS|u1|||||||||2026-08-01T10:00:00.000`,
     ...overrides,
   } as Row;
 }
@@ -39,7 +28,7 @@ function encadear(rows: Row[], prevHash: string | null = null): Row[] {
   let anterior = prevHash;
 
   return rows.map((row) => {
-    const encadeada = { ...row, prevHash: anterior, hash: computeHash(row, anterior) };
+    const encadeada = { ...row, hash: computeHash(row, anterior) };
     anterior = encadeada.hash;
     return encadeada;
   });
@@ -79,7 +68,10 @@ describe("caminhada da cadeia de auditoria", () => {
   it("aponta o primeiro registro alterado", () => {
     const rows = encadear([linha(1n), linha(2n), linha(3n)]);
     // Alterar o IP sem recalcular o hash é exatamente o que a cadeia existe para revelar.
-    rows[1] = { ...rows[1]!, ipAddress: "10.0.0.9" };
+    rows[1] = {
+      ...rows[1]!,
+      payloadTail: rows[1]!.payloadTail.replace("|u1|", "|u1|10.0.0.9|"),
+    };
 
     const state = walkChain(rows, initialChainState());
 

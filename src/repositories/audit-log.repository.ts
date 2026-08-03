@@ -124,31 +124,57 @@ export const auditLogRepository = {
     return prisma.auditLog.count();
   },
 
-  /** Percorre a cadeia em blocos, do início ao fim, para a verificação de integridade. */
+  /**
+   * Percorre a cadeia em blocos, do início ao fim, para a verificação de integridade.
+   *
+   * Devolve o **payload montado pelo próprio banco**, com a mesma expressão do trigger, em
+   * vez das colunas soltas para a aplicação remontar. O motivo é um defeito real: `metadata`
+   * é `jsonb`, e `jsonb::text` normaliza a saída — `{"a": 1}`, com espaço depois dos dois
+   * pontos, ordem de chaves própria. `JSON.stringify` produz `{"a":1}`. Payload diferente,
+   * hash diferente, e a verificação acusava adulteração em todo registro que tivesse
+   * metadados.
+   *
+   * O mesmo raciocínio cobre o carimbo de tempo, cuja formatação depende do fuso da sessão.
+   * Reproduzir essas regras em JavaScript seria refazer o Postgres — e errar de novo, mais
+   * tarde, em silêncio.
+   *
+   * O `hash` continua sendo calculado fora do banco, em Node, sobre o texto recebido: o que
+   * o banco faz aqui é renderizar colunas que ele já guarda, não atestar a própria trilha.
+   * Registro alterado por dentro produz payload novo, que não bate com o hash gravado — a
+   * detecção continua igual.
+   *
+   * `seq` e o hash anterior ficam de fora do texto de propósito: a verificação usa o hash do
+   * registro que ela mesma acabou de conferir, não o `prevHash` guardado na linha, que é
+   * justamente um dos campos que uma adulteração ajustaria.
+   */
   chainSlice(afterSeq: bigint, limit: number) {
-    return prisma.auditLog.findMany({
-      where: { seq: { gt: afterSeq } },
-      orderBy: { seq: "asc" },
-      take: limit,
-      select: {
-        seq: true,
-        prevHash: true,
-        hash: true,
-        action: true,
-        result: true,
-        userId: true,
-        actorId: true,
-        targetEmail: true,
-        actorEmail: true,
-        sessionId: true,
-        entity: true,
-        entityId: true,
-        reason: true,
-        ipAddress: true,
-        metadata: true,
-        createdAt: true,
-      },
-    });
+    return prisma.$queryRaw<
+      { seq: bigint; hash: string | null; createdAt: Date; payloadTail: string }[]
+    >`
+      SELECT
+        "seq",
+        "hash",
+        "createdAt",
+        concat_ws('|',
+          "action",
+          "result",
+          coalesce("userId", ''),
+          coalesce("actorId", ''),
+          coalesce("targetEmail", ''),
+          coalesce("actorEmail", ''),
+          coalesce("sessionId", ''),
+          coalesce("entity", ''),
+          coalesce("entityId", ''),
+          coalesce("reason", ''),
+          coalesce("ipAddress", ''),
+          coalesce("metadata"::text, ''),
+          to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS')
+        ) AS "payloadTail"
+      FROM "audit_logs"
+      WHERE "seq" > ${afterSeq}
+      ORDER BY "seq" ASC
+      LIMIT ${limit}
+    `;
   },
 };
 
