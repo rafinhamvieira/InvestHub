@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Permission, ROLE_PERMISSIONS, can, hasAdminAccess } from "@/lib/permissions";
+import { Permission, ROLE_PERMISSIONS, adminRoles, can, hasAdminAccess } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 
 const ROLES: Role[] = ["USER", "READ_ONLY", "AUDITOR", "SUPPORT", "ADMIN", "SUPER_ADMIN"];
@@ -56,9 +56,38 @@ describe("mapa de permissões", () => {
     }
   });
 
+  it("números de negócio não alcançam auditoria nem suporte", () => {
+    // Nenhuma das duas funções investiga patrimônio sob gestão; o dado a mais só amplia o
+    // estrago de um cargo comprometido.
+    for (const role of ["AUDITOR", "SUPPORT"] as const) {
+      expect(can({ id: "x", role }, Permission.VIEW_BUSINESS_METRICS)).toBe(false);
+    }
+
+    for (const role of ["READ_ONLY", "ADMIN", "SUPER_ADMIN"] as const) {
+      expect(can({ id: "x", role }, Permission.VIEW_BUSINESS_METRICS)).toBe(true);
+    }
+  });
+
+  it("todo cargo administrativo enxerga a saúde — é o que abre o painel", () => {
+    for (const role of adminRoles()) {
+      expect(can({ id: "x", role }, Permission.VIEW_SYSTEM_HEALTH)).toBe(true);
+    }
+  });
+
   it("nega quando não há principal", () => {
     expect(can(null, Permission.VIEW_AUDIT)).toBe(false);
     expect(can(undefined, Permission.VIEW_AUDIT)).toBe(false);
+  });
+});
+
+describe("adminRoles", () => {
+  it("deriva a lista do mapa, sem repetir cargos à mão", () => {
+    const roles = adminRoles();
+
+    expect(roles).not.toContain("USER");
+    expect([...roles].sort()).toEqual(
+      ["ADMIN", "AUDITOR", "READ_ONLY", "SUPER_ADMIN", "SUPPORT"].sort(),
+    );
   });
 });
 

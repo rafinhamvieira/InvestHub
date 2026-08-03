@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { ScrollText, Users, DatabaseBackup } from "lucide-react";
+import { LayoutDashboard, ScrollText, Users, DatabaseBackup } from "lucide-react";
 
 export interface AdminNavItem {
   title: string;
@@ -15,6 +15,12 @@ export interface AdminNavItem {
  * os menus é o primeiro passo para alguém acabar exibindo item de admin para usuário comum.
  */
 export const ADMIN_NAV: AdminNavItem[] = [
+  {
+    title: "Painel",
+    href: "/admin/dashboard",
+    icon: LayoutDashboard,
+    description: "Números da plataforma e saúde dos serviços",
+  },
   {
     title: "Auditoria",
     href: "/admin/audit",

@@ -23,6 +23,8 @@ export enum Permission {
   RESTORE_BACKUP = "RESTORE_BACKUP",
   /** Ver saúde de banco, cache, agendador e integrações. */
   VIEW_SYSTEM_HEALTH = "VIEW_SYSTEM_HEALTH",
+  /** Ver os números de negócio da plataforma: contas, patrimônio, proventos, cobertura. */
+  VIEW_BUSINESS_METRICS = "VIEW_BUSINESS_METRICS",
   /** Alterar configurações da plataforma. */
   MANAGE_PLATFORM = "MANAGE_PLATFORM",
   /** Conceder e remover cargos. */
@@ -42,8 +44,11 @@ export enum Permission {
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   USER: [],
 
-  READ_ONLY: [Permission.VIEW_AUDIT, Permission.VIEW_SYSTEM_HEALTH],
+  READ_ONLY: [Permission.VIEW_AUDIT, Permission.VIEW_SYSTEM_HEALTH, Permission.VIEW_BUSINESS_METRICS],
 
+  // Sem `VIEW_BUSINESS_METRICS`: auditoria e suporte existem para investigar eventos e
+  // atender contas. Patrimônio sob gestão e receita da base não ajudam em nenhuma das duas
+  // tarefas, e todo dado a mais no alcance de um cargo é dado a mais vazando junto com ele.
   AUDITOR: [Permission.VIEW_AUDIT, Permission.VIEW_SECURITY_CENTER, Permission.VIEW_SYSTEM_HEALTH],
 
   SUPPORT: [Permission.VIEW_AUDIT, Permission.MANAGE_USERS, Permission.VIEW_SYSTEM_HEALTH],
@@ -53,6 +58,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.MANAGE_USERS,
     Permission.MANAGE_BACKUPS,
     Permission.VIEW_SYSTEM_HEALTH,
+    Permission.VIEW_BUSINESS_METRICS,
     Permission.MANAGE_PLATFORM,
     Permission.VIEW_SECURITY_CENTER,
   ],
@@ -70,10 +76,25 @@ export function can(principal: Principal | null | undefined, permission: Permiss
   return ROLE_PERMISSIONS[principal.role]?.includes(permission) ?? false;
 }
 
+/** Cargo com algum poder administrativo — a definição de "equipe", em um lugar só. */
+export function isPrivilegedRole(role: Role): boolean {
+  return (ROLE_PERMISSIONS[role]?.length ?? 0) > 0;
+}
+
 /** Alguma permissão administrativa — decide se o item do painel aparece no menu. */
 export function hasAdminAccess(principal: Principal | null | undefined): boolean {
   if (!principal) return false;
-  return (ROLE_PERMISSIONS[principal.role]?.length ?? 0) > 0;
+  return isPrivilegedRole(principal.role);
+}
+
+/**
+ * Cargos que enxergam alguma tela administrativa.
+ *
+ * Derivado do mapa, nunca listado à mão: consulta que precise separar "equipe" de "usuário"
+ * — contar administradores, por exemplo — pergunta aqui em vez de comparar papéis.
+ */
+export function adminRoles(): Role[] {
+  return (Object.keys(ROLE_PERMISSIONS) as Role[]).filter(isPrivilegedRole);
 }
 
 /** Rótulos para as telas de cargo (Etapa 6 usa; já vive aqui para não duplicar depois). */

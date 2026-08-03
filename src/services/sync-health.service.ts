@@ -88,6 +88,36 @@ export const syncHealthService = {
   },
 
   /**
+   * Mesmo estado, sem nenhum efeito colateral — é o que o painel lê.
+   *
+   * `checkStaleness` não serve aqui: ela avisa os administradores quando encontra atraso, e
+   * uma tela que dispara notificação a cada abertura transformaria consulta em ruído.
+   *
+   * Redis indisponível devolve o estado vazio, que a tela mostra como "nenhuma sincronização
+   * registrada". Não é disfarce: a verificação do cache aparece ao lado, no mesmo resumo, e
+   * é ela que nomeia a causa.
+   */
+  async snapshot(): Promise<{
+    lastSuccessAt: string | null;
+    failures: number;
+    staleHours: number;
+    failureThreshold: number;
+  }> {
+    const thresholds = { staleHours: STALE_HOURS, failureThreshold: FAILURE_THRESHOLD };
+
+    try {
+      const [lastSuccessAt, failures] = await Promise.all([
+        redis.get(LAST_SUCCESS_KEY),
+        redis.get(FAILURES_KEY),
+      ]);
+
+      return { lastSuccessAt, failures: Number(failures ?? 0), ...thresholds };
+    } catch {
+      return { lastSuccessAt: null, failures: 0, ...thresholds };
+    }
+  },
+
+  /**
    * Avisa os administradores, no máximo uma vez por janela de silêncio.
    *
    * Sem administrador cadastrado o aviso vira log de erro — melhor do que espalhar problema

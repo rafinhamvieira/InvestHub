@@ -102,6 +102,8 @@ Todas as tabelas de domínio do usuário têm `userId` com `onDelete: Cascade` e
 - **Três barreiras por requisição.** Middleware (triagem pelo token) → `requirePermission()` (cargo lido do banco, sessão viva) → permissão da rota. O token vale 30 dias; só o banco sabe o cargo de agora.
 - **Step-up.** Ações críticas exigem senha (e MFA, se ativo) confirmada nos últimos 10 minutos, guardada no Redis, nunca no token.
 - **Fronteira de privacidade.** Serviços administrativos não importam `portfolio.service`, `transaction.repository`, `position.repository` e afins — teste vigia os imports. Administrador nunca vê carteira alheia.
+- **Números só agregados.** `admin-metrics.repository` é a única porta do painel para as tabelas financeiras, e só pode contar, somar e agrupar: teste falha se um `findMany`, `findFirst`, `findUnique` ou `$queryRaw` aparecer ali. É o que impede a tela de números de virar, por manutenção distraída, a listagem de carteiras que a fronteira proíbe.
+- **Saúde: medir e julgar são coisas separadas.** `admin-health.service` só sonda (banco, Redis, sincronização, backup, âncoras da auditoria); os limiares que transformam medição em `ok`/`warn`/`down` vivem em `utils/health-status`, puro e testado. Sondagem que falha vira `down` na própria linha, sem derrubar o resumo.
 
 ## 10. Auditoria append-only
 
@@ -131,4 +133,4 @@ Título não tem cotação: ganha **valor unitário sintético** (1,00 na emiss�
 
 Fases de produto (dashboard, carteira, aporte, alocação, screeners, valuation, ativo, watchlist, importação, proventos, renda fixa) — **entregues**.
 
-Painel administrativo profissional, em 10 etapas, uma por vez com confirmação: **1. Auditoria (entregue)** · 2. Dashboard administrativo · 3. Gestão de usuários · 4. Backup completo com restauração · 5. Logs da aplicação · 6. Telas de RBAC · 7. Monitoramento · 8. Configurações da plataforma · 9. Central de segurança (inclui checkpoints de auditoria em armazenamento externo WORM) · 10. Auditoria administrativa.
+Painel administrativo profissional, em 10 etapas, uma por vez com confirmação: **1. Auditoria (entregue)** · **2. Dashboard administrativo (entregue)** · 3. Gestão de usuários · 4. Backup completo com restauração · 5. Logs da aplicação · 6. Telas de RBAC · 7. Monitoramento · 8. Configurações da plataforma · 9. Central de segurança (inclui checkpoints de auditoria em armazenamento externo WORM) · 10. Auditoria administrativa.

@@ -34,6 +34,19 @@ export function formatSignedPercent(fraction: number): string {
   return fraction >= 0 ? `+${formatted}` : `-${formatted}`;
 }
 
+/** Duração legível a partir de segundos — usada no "no ar há" do painel administrativo. */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}min`;
+
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
 /** Tamanho de arquivo legível. Mora aqui, e não junto da lógica de backup, porque a tela
  * roda no navegador — e aquele módulo lida com caminhos, que é código só de servidor. */
 export function formatBytes(bytes: number): string {

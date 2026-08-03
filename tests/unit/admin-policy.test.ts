@@ -114,6 +114,9 @@ describe("fronteira de privacidade do painel", () => {
     "src/app/api/admin/users/route.ts",
     "src/app/api/admin/audit/route.ts",
     "src/app/api/admin/audit/export/route.ts",
+    "src/services/admin-health.service.ts",
+    "src/services/admin-metrics.service.ts",
+    "src/app/api/admin/dashboard/route.ts",
   ];
 
   /** Só as linhas de import interessam — comentário citando o módulo proibido é permitido. */
@@ -136,5 +139,30 @@ describe("fronteira de privacidade do painel", () => {
     // sempre, e a fronteira ficaria sem vigia nenhum.
     const linhas = ['import { portfolioService } from "@/services/portfolio.service";'];
     expect(linhas.join("\n")).toContain("portfolio.service");
+  });
+
+  /**
+   * O painel de números é a única parte do administrativo que toca em posições, transações e
+   * proventos — e só pode contar e somar. A lista de imports proibidos não protegeria isso:
+   * o repositório fala com o Prisma diretamente. Aqui a trava é a operação, não o módulo.
+   *
+   * Sem ela, um `findMany` acrescentado numa manutenção futura transformaria a tela de
+   * números na listagem de carteiras alheias que a fronteira inteira existe para impedir.
+   */
+  it("o repositório de métricas só conta, soma e agrupa", () => {
+    const conteudo = readFileSync(
+      join(process.cwd(), "src/repositories/admin-metrics.repository.ts"),
+      "utf8",
+    );
+
+    for (const leituraDeLinha of [
+      "findMany",
+      "findFirst",
+      "findUnique",
+      "$queryRaw",
+      "$queryRawUnsafe",
+    ]) {
+      expect(conteudo).not.toContain(leituraDeLinha);
+    }
   });
 });

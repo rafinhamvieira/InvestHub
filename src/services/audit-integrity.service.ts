@@ -103,6 +103,32 @@ export const auditIntegrityService = {
   },
 
   /**
+   * Estado das âncoras para o resumo de saúde — duas leituras, sem percorrer a cadeia.
+   *
+   * A verificação completa (`verify`) lê a trilha inteira e é restrita ao super
+   * administrador; o painel precisa apenas saber se as âncoras estão sendo gravadas, o que
+   * cabe em duas consultas indexadas e não expõe conteúdo nenhum da trilha.
+   */
+  async anchorState(): Promise<{
+    headSeq: bigint | null;
+    checkpointSeq: bigint | null;
+    signingConfigured: boolean;
+    checkpointEvery: number;
+  }> {
+    const [head, last] = await Promise.all([
+      auditLogRepository.head(),
+      auditCheckpointRepository.last(),
+    ]);
+
+    return {
+      headSeq: head?.seq ?? null,
+      checkpointSeq: last?.seq ?? null,
+      signingConfigured: Boolean(process.env.AUDIT_HMAC_KEY),
+      checkpointEvery: CHECKPOINT_EVERY,
+    };
+  },
+
+  /**
    * Percorre a cadeia inteira e devolve o laudo.
    *
    * Leitura pura: não corrige nada, não apaga nada. Se a trilha estiver quebrada, quem

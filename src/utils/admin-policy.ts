@@ -1,5 +1,5 @@
 import type { Role } from "@prisma/client";
-import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { isPrivilegedRole } from "@/lib/permissions";
 
 /**
  * Regras de quem pode agir sobre quem no painel administrativo — puro, sem I/O.
@@ -24,9 +24,7 @@ export type AdminAction =
  * Não compara papéis: pergunta ao mapa de permissões. Cargo novo com acesso ao painel
  * passa a ser protegido por esta regra sem ninguém lembrar de vir aqui.
  */
-function isPrivileged(role: Role): boolean {
-  return (ROLE_PERMISSIONS[role]?.length ?? 0) > 0;
-}
+const isPrivileged = isPrivilegedRole;
 
 /** Ações que mexem no papel, e não nos dados da conta. */
 const ROLE_ACTIONS: AdminAction[] = ["GRANT_ADMIN", "REVOKE_ADMIN"];
